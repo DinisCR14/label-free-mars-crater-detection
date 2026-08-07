@@ -1,0 +1,34 @@
+# Local environments and editor state
+.conda/
+.venv/
+venv/
+.vscode/
+.DS_Store
+
+# External datasets, checkpoints, and generated runs
+data/
+datasets/
+checkpoints/
+outputs/
+runs/
+*.pth
+*.pkl
+*.pt
+*.ckpt
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+
+# Local notebooks and temporary exports
+.ipynb_checkpoints/
+*.log
+
+# Archival source material and local publication artifacts
+university_backup/
+ExtraCode/
+allexceptdata/
+*.pdf
+geometric_and_boundary_refinement.txt

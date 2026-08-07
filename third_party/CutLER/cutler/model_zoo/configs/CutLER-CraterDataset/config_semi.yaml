@@ -1,0 +1,71 @@
+_BASE_: "../Base-RCNN-FPN.yaml"
+
+MODEL:
+  META_ARCHITECTURE: "GeneralizedRCNN"
+  WEIGHTS: "DetMeanTeacher/experiment/warmup/model_final.pth"  # <- from warmup
+  MASK_ON: False
+  PIXEL_MEAN: [124.074, 124.074, 124.074]
+  PIXEL_STD: [32.345, 32.345, 32.345]
+  BACKBONE:
+    FREEZE_AT: 0
+  RESNETS:
+    DEPTH: 50
+    NORM: "BN"
+    STRIDE_IN_1X1: False
+  FPN:
+    NORM: "BN"
+  RPN:
+    POST_NMS_TOPK_TRAIN: 4000
+    NMS_THRESH: 0.7
+  ROI_HEADS:
+    NAME: "StandardROIHeads"
+    NUM_CLASSES: 1
+    SCORE_THRESH_TEST: 0.0
+    POSITIVE_FRACTION: 0.25
+
+DATASETS:
+  #TRAIN: ("crater_dataset_train", "crater_dataset_unlabeled")  # 💡 add unlabeled data here
+  TRAIN: ("crater_dataset_train",)
+  TEST: ("crater_dataset_val",)
+
+INPUT:
+  FORMAT: "RGB"
+  MIN_SIZE_TRAIN: (512,)
+  MAX_SIZE_TRAIN: 768
+  MASK_FORMAT: "bitmask"
+
+DATALOADER:
+  NUM_WORKERS: 2
+
+SOLVER:
+  IMS_PER_BATCH: 2
+  BASE_LR: 0.01
+  WEIGHT_DECAY: 0.00005
+  STEPS: (10000,)
+  #MAX_ITER: 5000  # Or more
+  MAX_ITER: 100
+  GAMMA: 0.1
+  AMP:
+    ENABLED: True
+  CLIP_GRADIENTS:
+    ENABLED: True
+    CLIP_TYPE: "norm"
+    CLIP_VALUE: 1.0
+    NORM_TYPE: 2.0
+
+# ✅ Enable semi-supervised Mean Teacher training
+SEMISUPNET:
+  EMA_KEEP_RATE: 0.999
+  TEACHER_CONFIDENCE_THRESHOLD: 0.7
+  TEACHER_IOU_THRESHOLD: 0.5
+  UNSUP_LOSS_WEIGHT: 1.0
+  ENABLE: True
+  VISUALIZE_AUG: False
+
+TEST:
+  PRECISE_BN:
+    ENABLED: False
+    NUM_ITER: 200
+  DETECTIONS_PER_IMAGE: 100
+
+OUTPUT_DIR: "DetMeanTeacher/experiment/semi"

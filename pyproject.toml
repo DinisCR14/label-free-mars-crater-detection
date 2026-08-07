@@ -1,0 +1,12 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "label-free-mars-crater-detection"
+version = "0.1.0"
+description = "Label-free Martian crater detection with Grounded SAM and domain-guided self-training"
+requires-python = ">=3.9"
+
+[tool.setuptools.packages.find]
+include = ["crater_detection*"]

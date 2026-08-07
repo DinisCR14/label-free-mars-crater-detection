@@ -1,0 +1,28 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite the associated IGARSS 2026 paper."
+title: "Label-Free Crater Detection using Grounded SAM and Domain-Guided Self-Training"
+type: software
+version: 0.1.0
+date-released: 2026-08-07
+
+authors:
+  - family-names: "Corte Real"
+    given-names: Dinis
+  - family-names: Aguiar
+    given-names: "Pedro M. Q."
+  - family-names: Silveira
+    given-names: Margarida
+
+preferred-citation:
+  type: conference-paper
+  title: "Label-Free Crater Detection using Grounded SAM and Domain-Guided Self-Training"
+  authors:
+    - family-names: "Corte Real"
+      given-names: Dinis
+    - family-names: Aguiar
+      given-names: "Pedro M. Q."
+    - family-names: Silveira
+      given-names: Margarida
+  collection-title: "Proceedings of IGARSS 2026"
+  year: 2026
+  status: forthcoming

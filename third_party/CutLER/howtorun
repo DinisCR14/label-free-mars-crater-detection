@@ -1,0 +1,37 @@
+Terminal
+
+eval "$(/home/isradmin/miniconda3/bin/conda shell.bash hook)"
+conda activate cutler
+
+Unsupervised Model Learning
+
+python train_net.py --num-gpus 1 --config-file model_zoo/configs/CutLER-CraterDataset/cascade_mask_rcnn_R_50_FPN_modified.yaml
+
+Self-training
+
+Firstly, we can get model predictions via running:
+
+python train_net.py --num-gpus 1 --config-file model_zoo/configs/CutLER-CraterDataset/cascade_mask_rcnn_R_50_FPN_modified.yaml --test-dataset crater_dataset_train --eval-only TEST.DETECTIONS_PER_IMAGE 30 MODEL.WEIGHTS output0/model_final.pth OUTPUT_DIR output1/ 
+
+Secondly, we can run the following command to generate the json file for the first round of self-training:
+  
+python tools/get_self_training_ann.py --new-pred output1/inference/coco_instances_results.json --prev-ann /home/isradmin/Desktop/CutLER/CutLER/datasets/crater_dataset/annotations/train.json --save-path /home/isradmin/Desktop/CutLER/CutLER/datasets/crater_dataset/annotations/train_r1.json --threshold 0.7
+  
+Finally, place "train_r1.json" under "/home/isradmin/Desktop/CutLER/CutLER/datasets/crater_dataset/annotations", then launch the self-training process:
+  
+python train_net.py --num-gpus 1 --config-file model_zoo/configs/CutLER-CraterDataset/cascade_mask_rcnn_R_50_FPN_self_train_modified.yaml --train-dataset crater_dataset_train_r1 MODEL.WEIGHTS output/model_final.pth OUTPUT_DIR output/self-train-r1/
+  
+Na pasta do output, para ver métricas, escrever no terminal:
+
+tensorboard --logdir .
+
+Para testar com a verdadeira ground truth do test set:
+
+python train_net.py --num-gpus 1 --config-file model_zoo/configs/CutLER-CraterDataset/cascade_mask_rcnn_R_50_FPN_modified.yaml --test-dataset crater_dataset_test --eval-only TEST.DETECTIONS_PER_IMAGE 100 MODEL.WEIGHTS output0/model_final.pth OUTPUT_DIR output1/ 
+
+python train_net.py   --num-gpus 1   --config-file model_zoo/configs/CutLER-CraterDataset/cascade_mask_rcnn_R_50_FPN_modified.yaml   --test-dataset crater_dataset_test   --eval-only   MODEL.WEIGHTS Run17/final-train/model_final.pth   MODEL.ROI_HEADS.SCORE_THRESH_TEST 0.7   TEST.DETECTIONS_PER_IMAGE 100   OUTPUT_DIR Run17/test_afterft_07/
+
+To go from DropLoss to FBWR2DropLoss:
+
+Instead of using modeling/meta_arch/rcnn.py, use rcnn_fbwr2.py
+Instead of using roi_heads/custom_cascade_rcnn.py, use custom_cascade_rcnn_fbwr2.py
