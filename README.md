@@ -20,7 +20,13 @@ THEMIS imagery
     -> final standard-loss detector
 ```
 
-The label-generation pipeline does not require crater annotations. The detector training stages use the generated COCO annotations and the model checkpoints produced by preceding stages.
+The label-generation pipeline does not require crater annotations. The detector training stages use the generated COCO annotations and the model checkpoints produced by preceding stages. Reference crater annotations are reserved for offline evaluation and are not used for training, threshold selection, or pseudo-label generation.
+
+## Experimental Setting
+
+The experiments use the global THEMIS daytime infrared mosaic. Non-overlapping $512 \times 512$ pixel tiles are sampled while excluding latitudes beyond $\pm50^\circ$, resulting in 9,122 tiles split into 80% training, 10% validation, and 10% evaluation data. The evaluation catalog is the Robbins and Hynek Mars crater catalog; it is not required for the label-free training workflow.
+
+The reported Grounded DINO/SAM settings are the `circle` text prompt, box threshold `0.30`, and text threshold `0.25`. Geometric refinement retains ellipse axis ratios in `[0.7, 1.3]`. Initial FBWR filtering uses threshold `2000` on 8-bit imagery; the normalized detector-side FBWR threshold is `0.03`.
 
 ## Repository Structure
 
@@ -111,6 +117,10 @@ python scripts/run_full_pipeline.py \
 ```
 
 Add `--dry-run` to any workflow command to inspect the generated commands without loading models or starting training.
+
+## Reported Result
+
+In the accompanying paper, the label-free approach improves the zero-shot baseline from 10.1 AP50 to 56.2 AP50, approximately 86% of the reported fully supervised reference performance. These values are included for context and should be interpreted together with the paper's evaluation protocol.
 
 ## Configuration
 
