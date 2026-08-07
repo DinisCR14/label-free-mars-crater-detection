@@ -22,6 +22,20 @@ def main() -> None:
     parser.add_argument("--initial-weights", type=Path, required=True)
     parser.add_argument("--output-root", type=Path, required=True)
     parser.add_argument("--annotations-dir", type=Path, required=True)
+    parser.add_argument(
+        "--standard-loss-config",
+        type=Path,
+        default=(
+            Path(__file__).resolve().parents[1]
+            / "third_party"
+            / "CutLER"
+            / "cutler"
+            / "model_zoo"
+            / "configs"
+            / "CutLER-CraterDataset"
+            / "cascade_mask_rcnn_R_50_FPN_final.yaml"
+        ),
+    )
     parser.add_argument("--grounding-model-id", default="IDEA-Research/grounding-dino-base")
     parser.add_argument("--sam-model-type", default="vit_h")
     parser.add_argument("--prompt", default="circle")
@@ -55,6 +69,7 @@ def main() -> None:
         "--text-threshold", str(args.text_threshold),
         "--fbwr-threshold", str(args.fbwr_threshold),
         "--device", args.device,
+        "--python-executable", args.python_executable,
     ]
     if args.dry_run:
         label_command.append("--dry-run")
@@ -68,6 +83,7 @@ def main() -> None:
         "--initial-weights", str(args.initial_weights.resolve()),
         "--annotations-dir", str(args.annotations_dir.resolve()),
         "--output-root", str(output_root / "training"),
+        "--standard-loss-config", str(args.standard_loss_config.resolve()),
         "--num-gpus", str(args.num_gpus),
         "--python-executable", args.python_executable,
     ]

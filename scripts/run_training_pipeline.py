@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -34,12 +35,28 @@ class TrainingPipeline:
 
     def __init__(self, config: PipelineConfig, *, dry_run: bool = False):
         self.config = config
+        self.python_executable = self._resolve_python_executable(config.python_executable)
         self.dry_run = dry_run
         self.merge_script = (
             Path(__file__).resolve().parents[1] / "crater_detection" / "merge_self_training.py"
         )
-        self.config.annotations_dir.mkdir(parents=True, exist_ok=True)
-        self.config.output_root.mkdir(parents=True, exist_ok=True)
+        if not dry_run:
+            self.config.annotations_dir.mkdir(parents=True, exist_ok=True)
+            self.config.output_root.mkdir(parents=True, exist_ok=True)
+
+    @staticmethod
+    def _resolve_python_executable(executable: str) -> str:
+        executable_path = Path(executable).expanduser()
+        if executable_path.is_absolute() or executable_path.parent != Path("."):
+            resolved = executable_path.resolve()
+        else:
+            located = shutil.which(executable)
+            if located is None:
+                raise FileNotFoundError(f"Python executable not found: {executable}")
+            resolved = Path(located).resolve()
+        if not resolved.is_file():
+            raise FileNotFoundError(f"Python executable not found: {resolved}")
+        return str(resolved)
 
     def _run(self, command: list[str]) -> None:
         print("$ " + " ".join(command))
@@ -49,7 +66,7 @@ class TrainingPipeline:
             environment["PYTHONPATH"] = os.pathsep.join(path for path in python_path if path)
             environment["CRATER_DATASET_ROOT"] = str(self.config.dataset_root)
             environment["CRATER_ANNOTATIONS_DIR"] = str(self.config.annotations_dir)
-            environment["CRATER_INITIAL_ANNOTATIONS"] = self.config.initial_annotations.name
+            environment["CRATER_INITIAL_ANNOTATIONS"] = str(self.config.initial_annotations)
             subprocess.run(command, cwd=self.config.cutler_root, check=True, env=environment)
 
     def _train_net_command(
@@ -61,7 +78,7 @@ class TrainingPipeline:
         eval_only: bool = False,
     ) -> list[str]:
         command = [
-            self.config.python_executable,
+            self.python_executable,
             str(self.config.train_net),
             "--num-gpus",
             str(self.config.num_gpus),
@@ -111,7 +128,7 @@ class TrainingPipeline:
                 eval_only=True,
             ))
             self._run([
-                self.config.python_executable,
+                self.python_executable,
                 str(self.merge_script),
                 "--previous-json",
                 str(previous_annotations),

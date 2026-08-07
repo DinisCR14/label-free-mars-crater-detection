@@ -1,7 +1,6 @@
 submitit
 # torch==1.8.1
 # torchvision==0.9.1
-faiss-gpu==1.7.2
 opencv-python==4.6.0.66
 scikit-image==0.19.2
 scikit-learn==1.1.1

@@ -13,9 +13,11 @@ class LabelGenerationPipeline:
     def __init__(self, args: argparse.Namespace):
         self.args = args
         self.repo_root = Path(__file__).resolve().parents[1]
+        self.script_dir = self.repo_root / "scripts"
         self.package_dir = self.repo_root / "crater_detection"
         self.output_dir = args.output_dir.resolve()
-        self.output_dir.mkdir(parents=True, exist_ok=True)
+        if not args.dry_run:
+            self.output_dir.mkdir(parents=True, exist_ok=True)
         self.python_executable = args.python_executable
 
     def _run(self, command: list[str]) -> None:

@@ -42,20 +42,26 @@ docs/citation.bib       BibTeX citation for the associated paper
 
 Use an isolated Python environment. Python 3.9 is the reference environment; other versions may require compatible PyTorch, Detectron2, and third-party package versions.
 
+Install a PyTorch build appropriate for the target machine before installing Detectron2. The exact command depends on the operating system, Python version, and CPU/CUDA setup; use the official PyTorch selector for that command.
+
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
+# Install PyTorch using the command selected for your machine.
 python -m pip install -r requirements.txt
-python -m pip install -e third_party/CutLER
+python -m pip install -r third_party/CutLER/requirements.txt
+python -m pip install -e third_party/CutLER/detectron2
 python -m pip install -e .
 ```
 
-Install a PyTorch build appropriate for the target machine before running model inference or training. CPU execution is suitable for schema checks, refinement, FBWR evaluation, and workflow dry runs. Foundation-model inference and detector training can require substantial memory and runtime.
+CPU execution is suitable for schema checks, refinement, FBWR evaluation, and workflow dry runs. Foundation-model inference and detector training can require substantial memory and runtime.
 
 ## Data Download
 
-THEMIS imagery is available from the [THEMIS Image Explorer](http://viewer.mars.asu.edu/faq) and NASA's [Planetary Data System](http://pds-imaging.jpl.nasa.gov/). The optional download helper stores source data outside the repository:
+For the published experiment, use the prepared [512x512 supervisor archive](https://drive.google.com/file/d/1DcEOBtmu6AMFUOjjpm2qBpcfyQGBBawa/view?usp=sharing), which contains `_original.png` images, `_marked.png` visualizations, and `labels.json`. After downloading it, run [tools/dataset/prepare_dataset.py](tools/dataset/prepare_dataset.py) to create the repository's split layout. The exact command and latitude filtering are documented in [tools/dataset/README.md](tools/dataset/README.md).
+
+Raw THEMIS imagery is also available from the [THEMIS Image Explorer](http://viewer.mars.asu.edu/faq) and NASA's [Planetary Data System](http://pds-imaging.jpl.nasa.gov/). The optional download helper stores raw source data outside the repository:
 
 ```bash
 bash tools/dataset/download-themis-data.sh /data/mars
@@ -63,7 +69,8 @@ bash tools/dataset/download-themis-data.sh /data/mars
 
 See [tools/dataset/README.md](tools/dataset/README.md) for the expected prepared layout. You must also provide:
 
-- a text file listing images relative to the dataset root;
+- a text file listing training images relative to the dataset root (see [tools/dataset/README.md](tools/dataset/README.md));
+- the original `labels.json` crater catalog if you want to generate `val_truegt.json` and `test_truegt_clipped.json` for evaluation;
 - a Segment Anything checkpoint;
 - the Grounded DINO model downloaded through Transformers;
 - the initial detector checkpoint used by the CutLER configuration.
@@ -79,7 +86,7 @@ Run Grounded DINO/SAM, geometric and boundary refinement, and FBWR filtering as 
 ```bash
 python scripts/run_label_generation.py \
   --dataset-root /data/mars \
-  --image-root /data/mars/images \
+  --image-root /data/mars/train \
   --image-list /data/mars/image-list.txt \
   --sam-checkpoint /models/sam_vit_h_4b8939.pth \
   --output-dir /data/mars-runs/labels
@@ -108,7 +115,7 @@ The combined command performs both stages and preserves all intermediate labels 
 ```bash
 python scripts/run_full_pipeline.py \
   --dataset-root /data/mars \
-  --image-root /data/mars/images \
+  --image-root /data/mars/train \
   --image-list /data/mars/image-list.txt \
   --sam-checkpoint /models/sam_vit_h_4b8939.pth \
   --initial-weights /models/dino_RN50_pretrain_d2_format.pkl \

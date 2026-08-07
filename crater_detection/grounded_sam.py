@@ -54,9 +54,10 @@ class GroundedSAM:
         """Return binary masks and xyxy boxes for one image."""
         image_path = Path(image_path)
         image_pil = Image.open(image_path).convert("RGB")
-        image_bgr = cv2.imread(str(image_path), cv2.IMREAD_COLOR)
-        if image_bgr is None:
+        image = cv2.imread(str(image_path), cv2.IMREAD_COLOR)
+        if image is None:
             raise FileNotFoundError(f"Could not read image: {image_path}")
+        image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
         inputs = self.processor(
             images=image_pil,
@@ -74,13 +75,13 @@ class GroundedSAM:
         )
         boxes = results[0]["boxes"]
         if len(boxes) == 0:
-            height, width = image_bgr.shape[:2]
+            height, width = image.shape[:2]
             return np.empty((0, height, width), dtype=np.uint8), np.empty((0, 4), dtype=np.float32)
 
         transformed_boxes = self.predictor.transform.apply_boxes_torch(
-            boxes.to(self.device), image_bgr.shape[:2]
+            boxes.to(self.device), image.shape[:2]
         )
-        self.predictor.set_image(image_bgr)
+        self.predictor.set_image(image_rgb)
         masks, _, _ = self.predictor.predict_torch(
             point_coords=None,
             point_labels=None,

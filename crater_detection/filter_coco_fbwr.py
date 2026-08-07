@@ -10,7 +10,10 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from fbwr import FBWRConfig, fbwr_score, fbwr_score_torch
+try:
+    from .fbwr import FBWRConfig, fbwr_score, fbwr_score_torch
+except ImportError:
+    from fbwr import FBWRConfig, fbwr_score, fbwr_score_torch
 
 try:
     import torch

@@ -10,7 +10,10 @@ from typing import Any
 
 import numpy as np
 
-from export_coco import COCO_CATEGORIES
+try:
+    from .export_coco import COCO_CATEGORIES
+except ImportError:
+    from export_coco import COCO_CATEGORIES
 
 
 def _decode_segmentation(segmentation: Any, height: int, width: int, mask_utils) -> np.ndarray:
@@ -38,7 +41,8 @@ def _mask_iou_matrix(first: np.ndarray, second: np.ndarray, device: str) -> np.n
         intersection = (first_tensor[:, None] & second_tensor[None, :]).sum(dim=(-2, -1))
         union = (first_tensor[:, None] | second_tensor[None, :]).sum(dim=(-2, -1))
         iou = torch.zeros_like(intersection, dtype=torch.float32)
-        torch.divide(intersection.float(), union.float(), out=iou, where=union > 0)
+        valid_union = union > 0
+        iou[valid_union] = intersection[valid_union].float() / union[valid_union].float()
         return iou.cpu().numpy()
     except ImportError:
         first_bool = first.astype(bool)
