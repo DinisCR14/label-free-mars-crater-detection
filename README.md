@@ -70,12 +70,47 @@ bash tools/dataset/download-themis-data.sh /data/mars
 See [tools/dataset/README.md](tools/dataset/README.md) for the expected prepared layout. You must also provide:
 
 - a text file listing training images relative to the dataset root (see [tools/dataset/README.md](tools/dataset/README.md));
-- the original `labels.json` crater catalog if you want to generate `val_truegt.json` and `test_truegt_clipped.json` for evaluation;
-- a Segment Anything checkpoint;
-- the Grounded DINO model downloaded through Transformers;
-- the initial detector checkpoint used by the CutLER configuration.
+- the original `labels.json` crater catalog if you want to generate `val_truegt.json` and `test_truegt_clipped.json` for evaluation.
 
-Do not commit imagery, annotations, checkpoints, or generated runs.
+### Model Checkpoints
+
+Create a directory outside the repository for model files:
+
+```bash
+mkdir -p /models
+```
+
+Download the Segment Anything ViT-H checkpoint from the [official Segment Anything release](https://github.com/facebookresearch/segment-anything#model-checkpoints):
+
+```bash
+curl -L \
+  https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth \
+  -o /models/sam_vit_h_4b8939.pth
+```
+
+Pass this file to label generation with `--sam-checkpoint`:
+
+```text
+/models/sam_vit_h_4b8939.pth
+```
+
+Grounded DINO is loaded automatically by Transformers from the Hugging Face model repository [`IDEA-Research/grounding-dino-base`](https://huggingface.co/IDEA-Research/grounding-dino-base). No checkpoint path or manual download is required. On first use, Transformers downloads and caches the processor and weights in the Hugging Face cache, normally `~/.cache/huggingface/hub`. Set `HF_HOME` to place that cache elsewhere.
+
+Download the initial CutLER detector checkpoint from the [official CutLER repository](https://github.com/facebookresearch/CutLER):
+
+```bash
+curl -L \
+  http://dl.fbaipublicfiles.com/cutler/checkpoints/dino_RN50_pretrain_d2_format.pkl \
+  -o /models/dino_RN50_pretrain_d2_format.pkl
+```
+
+Pass its local path to detector training with `--initial-weights`:
+
+```text
+/models/dino_RN50_pretrain_d2_format.pkl
+```
+
+The self-training and final stages use checkpoints produced by the preceding stages under `--output-root`; they do not require additional downloaded model files. Do not commit imagery, annotations, checkpoints, or generated runs.
 
 ## Step-by-Step Usage
 
