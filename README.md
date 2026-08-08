@@ -160,6 +160,46 @@ python scripts/run_full_pipeline.py \
 
 Add `--dry-run` to any workflow command to inspect the generated commands without loading models or starting training.
 
+### 4. Evaluate the final detector
+
+Create the evaluation ground truth once, then evaluate the final checkpoint. The full evaluation command and dataset registration details are documented in [tools/dataset/README.md](tools/dataset/README.md). In brief:
+
+```bash
+python crater_detection/export_coco.py \
+  --ellipse-labels /data/mars/labels.json \
+  --image-root /data/mars/test \
+  --output-json /data/mars/annotations/test_truegt_clipped.json \
+  --clip-bboxes
+
+CRATER_DATASET_ROOT=/data/mars \
+CRATER_ANNOTATIONS_DIR=/data/mars/annotations \
+PYTHONPATH="$PWD/third_party/CutLER" \
+python third_party/CutLER/cutler/train_net.py \
+  --num-gpus 1 \
+  --config-file third_party/CutLER/cutler/model_zoo/configs/CutLER-CraterDataset/cascade_mask_rcnn_R_50_FPN_final.yaml \
+  --test-dataset crater_dataset_test \
+  --eval-only \
+  TEST.DETECTIONS_PER_IMAGE 100 \
+  MODEL.WEIGHTS /data/mars-runs/training/final-standard-loss/model_final.pth \
+  OUTPUT_DIR /data/mars-runs/evaluation
+```
+
+This writes the scored detector predictions to `/data/mars-runs/evaluation/inference/coco_instances_results.json`.
+
+### 5. Plot bbox metrics by crater size
+
+After evaluation, use the COCO ground truth and one or more `coco_instances_results.json` files to create the aggregate 2x2 and size-stratified 3x4 figures:
+
+```bash
+python crater_detection/plot_bbox_metrics.py \
+  --ground-truth /data/mars/annotations/test_truegt_clipped.json \
+  --model Label-Free=/data/mars-runs/evaluation/inference/coco_instances_results.json \
+  --model Supervised=/data/mars-runs/supervised/evaluation/inference/coco_instances_results.json \
+  --output-dir /data/mars-runs/plots
+```
+
+Repeat `--model LABEL=JSON` for every scored model you want to compare. The JSON can be a Detectron2 `coco_instances_results.json` list or a COCO object containing an `annotations` list. The script uses bbox-only IoU matching at thresholds `0.1` through `0.9`, COCO-style confidence ordering, a maximum of 100 detections per image, and the crater area boundaries used by the evaluator: `pi*5^2` and `pi*20^2`. It writes `bbox_metrics_all.png`, `bbox_metrics_by_size.png`, and the underlying `bbox_metrics.json`.
+
 ## Reported Result
 
 In the accompanying paper, the label-free approach improves the zero-shot baseline from 10.1 AP50 to 56.2 AP50, approximately 86% of the reported fully supervised reference performance. These values are included for context and should be interpreted together with the paper's evaluation protocol.

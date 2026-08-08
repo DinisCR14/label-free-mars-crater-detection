@@ -5,3 +5,4 @@ transformers
 segment-anything
 Pillow
 scikit-image
+matplotlib
