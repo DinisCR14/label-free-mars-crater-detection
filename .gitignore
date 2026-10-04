@@ -22,6 +22,7 @@ ENV/
 .env.*
 .vscode/
 .idea/
+AGENTS.md
 
 # Operating-system and notebook artifacts
 .DS_Store

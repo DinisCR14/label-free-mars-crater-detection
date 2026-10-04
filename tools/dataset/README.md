@@ -10,6 +10,54 @@ The published experiment used a prepared 512x512 archive supplied by the project
 
 The historical preparation material also used the [Mars Crater Study Dataset](https://www.kaggle.com/datasets/codebreaker619/mars-crater-study-dataset/) for crater locations. Keep downloaded archives and source data outside the repository.
 
+## Corrected 2012 baseline
+
+The supplied `regularhd-large` archive is the trusted 2012 image/label pair. The correction pipeline is run with the scripts in `tools/dataset/` and writes a separate output directory; it never modifies the source archive. The source archive and all generated datasets should remain outside this repository.
+
+First audit the source-image coverage needed by the remosaicking step:
+
+```bash
+python tools/dataset/audit_correction_coverage.py \
+    /data/mars/regularhd-large \
+    /data/mars/robbins2020-work/correction_coverage_manifest.json
+```
+
+Then generate corrected images, overlays, correction metadata, and unfiltered transformed labels:
+
+```bash
+python tools/dataset/correct_reference_dataset.py \
+    /data/mars/regularhd-large/labels.json \
+    /data/mars/regularhd-large \
+    /data/mars/regularhd-large-corrected-2012-final \
+    --coverage-manifest /data/mars/robbins2020-work/correction_coverage_manifest.json \
+    --all
+```
+
+Finally create the canonical labels by removing only fully invisible ellipses and conservative within-tile duplicates:
+
+```bash
+python tools/dataset/filter_corrected_labels.py \
+    /data/mars/regularhd-large-corrected-2012-final/labels_unfiltered.json \
+    /data/mars/regularhd-large-corrected-2012-final/labels.json \
+    /data/mars/regularhd-large-corrected-2012-final/label_filter_report.json
+```
+
+Build the final per-tile manifest from the three reports:
+
+```bash
+python tools/dataset/build_corrected_manifest.py \
+    /data/mars/regularhd-large-corrected-2012-final/correction_report.json \
+    /data/mars/regularhd-large-corrected-2012-final/label_filter_report.json \
+    /data/mars/robbins2020-work/correction_coverage_manifest.json \
+    /data/mars/regularhd-large-corrected-2012-final/dataset_manifest.json
+```
+
+The corrected images are latitude-row mosaics compressed horizontally by `cos(abs(latitude))`. Consequently, a corrected tile can contain labels from neighboring source tiles and the same crater can occur in multiple overlapping corrected tiles. The canonical `labels.json` keeps ellipses that intersect the output canvas, including ellipses whose centers are outside the canvas, and removes only fully invisible ellipses and conservative within-tile duplicates. The correction report records complete versus gapped source neighborhoods; gapped tiles contain black regions where source imagery is unavailable.
+
+The final external dataset contains `labels.json`, `labels_unfiltered.json`, `correction_report.json`, `label_filter_report.json`, `dataset_manifest.json`, and corrected overlay previews. The validated run predates this standard naming and uses `labels_visible_deduplicated_report.json` for the filter report; it is otherwise equivalent. Keep this generated dataset outside the repository. The canonical labels from the validated run contain 485,267 ellipses; the unfiltered correction report contains 1,152,607 transformed labels before visibility filtering and deduplication.
+
+The canonical correction path consists of `audit_correction_coverage.py`, `correct_reference_dataset.py`, `filter_corrected_labels.py`, and `build_corrected_manifest.py`. `audit_reference_labels.py` and `render_canonical_label_overlays.py` are optional validation tools. Catalog-comparison scripts, prototype scripts, and alternate overlay renderers are exploratory review tools kept in the external `robbins2020-work/exploration/` directory and are not required by dataset preparation.
+
 ## Expected prepared layout
 
 The later CutLER registration expects a dataset root with this structure:

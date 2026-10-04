@@ -72,6 +72,10 @@ See [tools/dataset/README.md](tools/dataset/README.md) for the expected prepared
 - a text file listing training images relative to the dataset root (see [tools/dataset/README.md](tools/dataset/README.md));
 - the original `labels.json` crater catalog if you want to generate `val_truegt.json` and `test_truegt_clipped.json` for evaluation.
 
+### Corrected 2012 Baseline
+
+The trusted `regularhd-large` 2012 image/label pair can be corrected with the documented coverage-audit, remosaicking, label-filtering, and manifest workflow in [tools/dataset/README.md](tools/dataset/README.md). The source archive and generated corrected dataset remain external; the repository contains the reproducible code and tests, not the image archive or generated labels.
+
 ### Model Checkpoints
 
 Create a directory outside the repository for model files:
