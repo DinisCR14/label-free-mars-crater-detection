@@ -74,7 +74,9 @@ See [tools/dataset/README.md](tools/dataset/README.md) for the expected prepared
 
 ### Corrected 2012 Baseline
 
-The trusted `regularhd-large` 2012 image/label pair can be corrected with the documented coverage-audit, remosaicking, label-filtering, and manifest workflow in [tools/dataset/README.md](tools/dataset/README.md). The source archive and generated corrected dataset remain external; the repository contains the reproducible code and tests, not the image archive or generated labels.
+The current `regularhd-large/labels.json` labels have been matched to the 2012 Robbins and Hynek catalogue using [tools/dataset/compare_catalog_versions.py](tools/dataset/compare_catalog_versions.py). These are the reference labels currently in use. The 2014 and 2020 catalogue files are retained externally for future comparison and are not currently used by the correction or training workflow.
+
+The trusted `regularhd-large` image/label pair can be corrected with the documented coverage-audit, remosaicking, label-filtering, and manifest workflow in [tools/dataset/README.md](tools/dataset/README.md). The source archive and generated corrected dataset remain external; the repository contains the reproducible code and tests, not the image archive or generated labels.
 
 ### Model Checkpoints
 

@@ -6,9 +6,22 @@ The detector pipeline consumes an external prepared dataset; it does not require
 
 THEMIS imagery is publicly available through the [THEMIS Image Explorer](http://viewer.mars.asu.edu/faq) and NASA's [Planetary Data System](http://pds-imaging.jpl.nasa.gov/). The crater metadata used by the historical preparation scripts came from the referenced Mars crater study dataset. Download and store those external assets outside this repository.
 
-The published experiment used a prepared 512x512 archive supplied by the project supervisors: [Google Drive archive](https://drive.google.com/file/d/1DcEOBtmu6AMFUOjjpm2qBpcfyQGBBawa/view?usp=sharing). It contains `_original.png` images, matching `_marked.png` visualizations, and `labels.json`. The images were created from THEMIS imagery and crater locations from DeLatte et al. (2019). This repository does not redistribute that archive. The helper download script retrieves raw THEMIS source imagery only; it does not reproduce the supplied 512x512 archive.
+The published experiment used a prepared 512x512 archive supplied by the project supervisors: [Google Drive archive](https://drive.google.com/file/d/1DcEOBtmu6AMFUOjjpm2qBpcfyQGBBawa/view?usp=sharing). It contains `_original.png` images, matching `_marked.png` visualizations, and `labels.json`. The images were created from THEMIS imagery. This repository does not redistribute that archive. The helper download script retrieves raw THEMIS source imagery only; it does not reproduce the supplied 512x512 archive.
 
 The historical preparation material also used the [Mars Crater Study Dataset](https://www.kaggle.com/datasets/codebreaker619/mars-crater-study-dataset/) for crater locations. Keep downloaded archives and source data outside the repository.
+
+The supplied `regularhd-large/labels.json` was compared against the 2012, 2014, and 2020 Robbins and Hynek catalogue files. Its geographic coordinates match the 2012 catalogue at floating-point precision, and its recovered diameters match to the catalogue's rounding precision, identifying the 2012 catalogue as the source version currently in use. The comparison tool is [compare_catalog_versions.py](compare_catalog_versions.py). Keep the catalogue files and generated `catalogue_comparison_report.json` in the external `/data/mars/robbins2020-work/catalogues/` directory. The 2014 and 2020 versions are preserved there for future analysis but are not currently used.
+
+Reproduce the comparison with:
+
+```bash
+python tools/dataset/compare_catalog_versions.py \
+    /data/mars/regularhd-large/labels.json \
+    /data/mars/robbins2020-work/catalogues/RobbinsCraters_20121016.tsv \
+    "/data/mars/robbins2020-work/catalogues/Combined Catalog - 20140830 (v2).txt" \
+    /data/mars/robbins2020-work/catalogues/Catalog_Mars_Release_2020_1kmPlus_FullMorphData.csv \
+    /data/mars/robbins2020-work/catalogues/catalogue_comparison_report.json
+```
 
 ## Corrected 2012 baseline
 
@@ -28,7 +41,7 @@ Then generate corrected images, overlays, correction metadata, and unfiltered tr
 python tools/dataset/correct_reference_dataset.py \
     /data/mars/regularhd-large/labels.json \
     /data/mars/regularhd-large \
-    /data/mars/regularhd-large-corrected-2012-final \
+    /data/mars/regularhd-large-corrected-2012 \
     --coverage-manifest /data/mars/robbins2020-work/correction_coverage_manifest.json \
     --all
 ```
@@ -37,19 +50,19 @@ Finally create the canonical labels by removing only fully invisible ellipses an
 
 ```bash
 python tools/dataset/filter_corrected_labels.py \
-    /data/mars/regularhd-large-corrected-2012-final/labels_unfiltered.json \
-    /data/mars/regularhd-large-corrected-2012-final/labels.json \
-    /data/mars/regularhd-large-corrected-2012-final/label_filter_report.json
+    /data/mars/regularhd-large-corrected-2012/labels_unfiltered.json \
+    /data/mars/regularhd-large-corrected-2012/labels.json \
+    /data/mars/regularhd-large-corrected-2012/label_filter_report.json
 ```
 
 Build the final per-tile manifest from the three reports:
 
 ```bash
 python tools/dataset/build_corrected_manifest.py \
-    /data/mars/regularhd-large-corrected-2012-final/correction_report.json \
-    /data/mars/regularhd-large-corrected-2012-final/label_filter_report.json \
+    /data/mars/regularhd-large-corrected-2012/correction_report.json \
+    /data/mars/regularhd-large-corrected-2012/label_filter_report.json \
     /data/mars/robbins2020-work/correction_coverage_manifest.json \
-    /data/mars/regularhd-large-corrected-2012-final/dataset_manifest.json
+    /data/mars/regularhd-large-corrected-2012/dataset_manifest.json
 ```
 
 The corrected images are latitude-row mosaics compressed horizontally by `cos(abs(latitude))`. Consequently, a corrected tile can contain labels from neighboring source tiles and the same crater can occur in multiple overlapping corrected tiles. The canonical `labels.json` keeps ellipses that intersect the output canvas, including ellipses whose centers are outside the canvas, and removes only fully invisible ellipses and conservative within-tile duplicates. The correction report records complete versus gapped source neighborhoods; gapped tiles contain black regions where source imagery is unavailable.

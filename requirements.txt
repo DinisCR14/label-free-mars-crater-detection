@@ -7,3 +7,4 @@ tqdm
 Pillow
 scikit-image
 matplotlib
+ipywidgets
