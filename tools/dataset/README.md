@@ -10,17 +10,68 @@ The published experiment used a prepared 512x512 archive supplied by the project
 
 The historical preparation material also used the [Mars Crater Study Dataset](https://www.kaggle.com/datasets/codebreaker619/mars-crater-study-dataset/) for crater locations. Keep downloaded archives and source data outside the repository.
 
-The supplied `regularhd-large/labels.json` was compared against the 2012, 2014, and 2020 Robbins and Hynek catalogue files. Its geographic coordinates match the 2012 catalogue at floating-point precision, and its recovered diameters match to the catalogue's rounding precision, identifying the 2012 catalogue as the source version currently in use. The comparison tool is [compare_catalog_versions.py](compare_catalog_versions.py). Keep the catalogue files and generated `catalogue_comparison_report.json` in the external `/data/mars/robbins2020-work/catalogues/` directory. The 2014 and 2020 versions are preserved there for future analysis but are not currently used.
+### Verified 2012 provenance checkpoint
+
+An independent metadata-only reconstruction was started under `/data/mars/regularhd-really-2012/` using `RobbinsCraters_20121016.tsv` and the untouched `/data/mars/regularhd-large/` archive. The first five-tile sample established the following conventions:
+
+- `lat_<latitude>_long_<longitude>` identifies the lower-left corner of a 2-degree tile.
+- Pixel coordinates use 256 pixels per degree: `x = (longitude - tile_longitude) * 256` and `y = (latitude - tile_latitude) * 256`.
+- Longitude differences must be normalized across the -180/180 boundary.
+- Label radii are reconstructed from `DIAM_CIRCLE_IMAGE`, with the horizontal radius scaled by the cosine of the crater latitude.
+- Existing labels match the 2012 catalogue at floating-point precision for the sampled tiles, including their recovered diameters.
+- Boundary labels require an ellipse-intersection policy; centers may lie outside the nominal 512-by-512 tile.
+
+The sample also found four catalogue rows whose ellipses intersect sampled tiles but which are absent from the supplied labels. These are boundary cases and must be classified before treating the independent reconstruction as complete. The full archive-level comparison is therefore still pending. Do not replace `regularhd-large/labels.json` or regenerate the corrected dataset until those rows, the remaining unmatched occurrences, and the duplicate policy have been accounted for.
+
+The current `generate_corrected_labels.py` is not the 2012 reconstruction tool: its catalogue reader is specialized to the 2020 field names. The dedicated 2012 generator is [generate_robbins_2012_labels.py](generate_robbins_2012_labels.py). Reproduce the current candidate with:
+
+```bash
+python tools/dataset/generate_robbins_2012_labels.py \
+    /data/mars/catalogues/RobbinsCraters_20121016.tsv \
+    /data/mars/regularhd-large \
+    /data/mars/regularhd-really-2012/labels_robbins_2012.json \
+    /data/mars/regularhd-really-2012/labels_robbins_2012_report.json \
+    --inclusion intersects
+```
+
+This output is currently a candidate, not a canonical replacement for the supplied labels. The report records the catalogue hash, tile geometry, diameter field, inclusion policy, and assigned occurrence counts. The `center` inclusion mode is available for comparison, but the historical archive's exact inclusion policy still needs to be resolved.
+
+The current difference audit gives a useful constraint: the intersection candidate contains 398,003 occurrences versus 390,698 in the supplied archive. Every supplied coordinate occurrence is present in the candidate, but the candidate adds 7,305 occurrences. Using the repository catalogue matcher, the candidate contains about 669 additional unique catalogue rows and substantially more repeated tile placements. The center-only mode produces 370,566 occurrences and cannot explain the supplied boundary labels. Therefore neither simple center-only nor all-intersections is yet established as the historical archive policy; the extra rows and repeated placements require further classification and visual review.
+
+### Historical label-filter reproduction
+
+The associated `allexceptdata/tools/gen_dataset.py` contains the historical image-content filter. The repository generator reproduces it with `--historical-filter` while reading the existing archive images and writing only a separate labels file:
+
+```bash
+python tools/dataset/generate_robbins_2012_labels.py \
+    /data/mars/catalogues/RobbinsCraters_20121016.tsv \
+    /data/mars/regularhd-large \
+    /data/mars/regularhd-reproduction/labels_historical_filter.json \
+    /data/mars/regularhd-reproduction/labels_historical_filter_report.json \
+    --historical-filter
+```
+
+This mode applies the catalogue minimum diameter of 0.25 km, the 8% axis-aligned bounding-box intersection threshold, the 8% non-black pixel threshold inside the clipped bounding box, and the 70% minimum non-black content threshold for a complete tile. It checks the historical first OpenCV channel, which corresponds to the blue channel when the archive PNG is read as RGB. It does not recreate or modify images.
+
+Against the current archive, the reproduction produced 390,699 labels across 12,264 tiles. The supplied `labels.json` contains 390,698 labels; 390,697 match after rounding coordinates to six decimals. The remaining differences are one supplied label at the exact 8% content boundary and two labels retained by the reproduction but absent from the supplied file. This is sufficient to identify the historical cleaning policy, but the two omissions remain an undocumented archive-generation difference and should be recorded rather than silently treated as reproduced.
+
+An optional exact-zero image-content filter removes a label only when at least one pixel center lies inside its projected ellipse and every covered pixel is grayscale zero. Applied to the intersection candidate, it removes 666 occurrences, including 665 candidate-only extras and one supplied occurrence at `lat_-4.0_long_80.0`; the filtered candidate contains 397,337 occurrences and still adds 6,640 occurrences beyond the supplied archive. Reproduce this analysis with `--discard-fully-black` and keep the resulting file separate until the historical inclusion policy is resolved.
+
+A three-color visual audit of the filtered candidate found that 6,603 of its 6,640 candidate-only occurrences have centers outside their tile; the remaining 37 center-inside cases are mostly very large projected catalogue ellipses or labels adjacent to source-image gaps. The reproducible renderer is [render_label_comparison_overlays.py](render_label_comparison_overlays.py); use blue for shared labels, green for supplied-only labels, and red for candidate-only labels. This audit supports the geometry and black-content rules, but it does not establish the historical boundary-inclusion policy.
+
+An additional optional center-pixel filter was tested using the pixel at `floor(center_x), floor(center_y)`. It removed 426 occurrences from the fully-black-filtered candidate, but 402 of those occurrences are also present in the supplied archive; only 24 were candidate-only. The resulting candidate contains 396,911 occurrences, shares 390,295 with the supplied archive, and omits 403 supplied occurrences. Therefore a black center alone is not a reliable final-label rule and should remain an analysis option rather than part of the canonical policy.
+
+The supplied `regularhd-large/labels.json` was compared against the 2012, 2014, and 2020 Robbins and Hynek catalogue files. Its geographic coordinates match the 2012 catalogue at floating-point precision, and its recovered diameters match to the catalogue's rounding precision, identifying the 2012 catalogue as the source version currently in use. The comparison tool is [compare_catalog_versions.py](compare_catalog_versions.py). Keep the catalogue files and generated `catalogue_comparison_report.json` in the external `/data/mars/catalogues/` directory. The 2014 and 2020 versions are preserved there for future analysis but are not currently used.
 
 Reproduce the comparison with:
 
 ```bash
 python tools/dataset/compare_catalog_versions.py \
     /data/mars/regularhd-large/labels.json \
-    /data/mars/robbins2020-work/catalogues/RobbinsCraters_20121016.tsv \
-    "/data/mars/robbins2020-work/catalogues/Combined Catalog - 20140830 (v2).txt" \
-    /data/mars/robbins2020-work/catalogues/Catalog_Mars_Release_2020_1kmPlus_FullMorphData.csv \
-    /data/mars/robbins2020-work/catalogues/catalogue_comparison_report.json
+    /data/mars/catalogues/RobbinsCraters_20121016.tsv \
+    "/data/mars/catalogues/Combined Catalog - 20140830 (v2).txt" \
+    /data/mars/catalogues/Catalog_Mars_Release_2020_1kmPlus_FullMorphData.csv \
+    /data/mars/catalogues/catalogue_comparison_report.json
 ```
 
 ## Corrected 2012 baseline
