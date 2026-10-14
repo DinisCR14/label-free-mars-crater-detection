@@ -21,22 +21,9 @@ An independent metadata-only reconstruction was started under `/data/mars/regula
 - Existing labels match the 2012 catalogue at floating-point precision for the sampled tiles, including their recovered diameters.
 - Boundary labels require an ellipse-intersection policy; centers may lie outside the nominal 512-by-512 tile.
 
-The sample also found four catalogue rows whose ellipses intersect sampled tiles but which are absent from the supplied labels. These are boundary cases and must be classified before treating the independent reconstruction as complete. The full archive-level comparison is therefore still pending. Do not replace `regularhd-large/labels.json` or regenerate the corrected dataset until those rows, the remaining unmatched occurrences, and the duplicate policy have been accounted for.
+The sample initially found boundary cases that required further classification. The full archive comparison is now complete: the historical preparation procedure has been identified in the associated `allexceptdata/tools/gen_dataset.py` and reproduced for the supplied 512x512 archive. The supplied `regularhd-large/labels.json` remains the canonical annotation; the repository generator is a provenance and reproducibility tool, not a replacement for that file.
 
-The current `generate_corrected_labels.py` is not the 2012 reconstruction tool: its catalogue reader is specialized to the 2020 field names. The dedicated 2012 generator is [generate_robbins_2012_labels.py](generate_robbins_2012_labels.py). Reproduce the current candidate with:
-
-```bash
-python tools/dataset/generate_robbins_2012_labels.py \
-    /data/mars/catalogues/RobbinsCraters_20121016.tsv \
-    /data/mars/regularhd-large \
-    /data/mars/regularhd-really-2012/labels_robbins_2012.json \
-    /data/mars/regularhd-really-2012/labels_robbins_2012_report.json \
-    --inclusion intersects
-```
-
-This output is currently a candidate, not a canonical replacement for the supplied labels. The report records the catalogue hash, tile geometry, diameter field, inclusion policy, and assigned occurrence counts. The `center` inclusion mode is available for comparison, but the historical archive's exact inclusion policy still needs to be resolved.
-
-The current difference audit gives a useful constraint: the intersection candidate contains 398,003 occurrences versus 390,698 in the supplied archive. Every supplied coordinate occurrence is present in the candidate, but the candidate adds 7,305 occurrences. Using the repository catalogue matcher, the candidate contains about 669 additional unique catalogue rows and substantially more repeated tile placements. The center-only mode produces 370,566 occurrences and cannot explain the supplied boundary labels. Therefore neither simple center-only nor all-intersections is yet established as the historical archive policy; the extra rows and repeated placements require further classification and visual review.
+The current `generate_corrected_labels.py` is not the 2012 reconstruction tool: its catalogue reader is specialized to the 2020 field names. The dedicated 2012 generator is [generate_robbins_2012_labels.py](generate_robbins_2012_labels.py).
 
 ### Historical label-filter reproduction
 
@@ -53,11 +40,19 @@ python tools/dataset/generate_robbins_2012_labels.py \
 
 This mode applies the catalogue minimum diameter of 0.25 km, the 8% axis-aligned bounding-box intersection threshold, the 8% non-black pixel threshold inside the clipped bounding box, and the 70% minimum non-black content threshold for a complete tile. It checks the historical first OpenCV channel, which corresponds to the blue channel when the archive PNG is read as RGB. It does not recreate or modify images.
 
-Against the current archive, the reproduction produced 390,699 labels across 12,264 tiles. The supplied `labels.json` contains 390,698 labels; 390,697 match after rounding coordinates to six decimals. The remaining differences are one supplied label at the exact 8% content boundary and two labels retained by the reproduction but absent from the supplied file. This is sufficient to identify the historical cleaning policy, but the two omissions remain an undocumented archive-generation difference and should be recorded rather than silently treated as reproduced.
+The command reads the existing archive images as inputs and writes only `labels_historical_filter.json` and its report. It does not regenerate, copy, or modify images. The report records the catalogue path, catalogue SHA-256, image-directory path, tile geometry, filtering thresholds, and output counts. The paths in the example are portable placeholders; use the actual external paths on the machine running the command.
+
+Against the current archive, the reproduction produced 390,699 labels across 12,264 tiles. The supplied `labels.json` contains 390,698 labels; 390,697 match after rounding coordinates to six decimals. The remaining differences are one supplied label at the exact 8% content boundary and two labels retained by the reproduction but absent from the supplied file. This identifies the historical cleaning policy, but those three occurrence-level differences remain an undocumented archive-generation detail and should not be silently presented as an exact reproduction.
+
+The validated run used `/home/dcortereal/datasets/catalogues/RobbinsCraters_20121016.tsv` and `/home/dcortereal/datasets/regularhd-large`. The catalogue SHA-256 was `7dadc273277cd3a7c4155b2f92c67bda64a093b7d48abe19d6de2898198a27a6`; the full report is stored with the external reproduction outputs. Keep both external inputs read-only.
+
+### Exploratory analyses
+
+The following filters and visual audits were useful for understanding the discrepancy but are not part of the canonical 2012 reproduction command.
 
 An optional exact-zero image-content filter removes a label only when at least one pixel center lies inside its projected ellipse and every covered pixel is grayscale zero. Applied to the intersection candidate, it removes 666 occurrences, including 665 candidate-only extras and one supplied occurrence at `lat_-4.0_long_80.0`; the filtered candidate contains 397,337 occurrences and still adds 6,640 occurrences beyond the supplied archive. Reproduce this analysis with `--discard-fully-black` and keep the resulting file separate until the historical inclusion policy is resolved.
 
-A three-color visual audit of the filtered candidate found that 6,603 of its 6,640 candidate-only occurrences have centers outside their tile; the remaining 37 center-inside cases are mostly very large projected catalogue ellipses or labels adjacent to source-image gaps. The reproducible renderer is [render_label_comparison_overlays.py](render_label_comparison_overlays.py); use blue for shared labels, green for supplied-only labels, and red for candidate-only labels. This audit supports the geometry and black-content rules, but it does not establish the historical boundary-inclusion policy.
+A three-color visual audit of the filtered candidate found that 6,603 of its 6,640 candidate-only occurrences have centers outside their tile; the remaining 37 center-inside cases are mostly very large projected catalogue ellipses or labels adjacent to source-image gaps. The reproducible renderer is [render_label_comparison_overlays.py](render_label_comparison_overlays.py); use blue for shared labels, green for supplied-only labels, and red for candidate-only labels. These overlays are diagnostic only and are not required to generate the canonical reproduction.
 
 An additional optional center-pixel filter was tested using the pixel at `floor(center_x), floor(center_y)`. It removed 426 occurrences from the fully-black-filtered candidate, but 402 of those occurrences are also present in the supplied archive; only 24 were candidate-only. The resulting candidate contains 396,911 occurrences, shares 390,295 with the supplied archive, and omits 403 supplied occurrences. Therefore a black center alone is not a reliable final-label rule and should remain an analysis option rather than part of the canonical policy.
 
