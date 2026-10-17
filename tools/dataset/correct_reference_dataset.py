@@ -9,6 +9,7 @@ import re
 from pathlib import Path
 
 from PIL import Image, ImageDraw
+from tqdm import tqdm
 
 
 FILENAME_PATTERN = re.compile(
@@ -36,7 +37,8 @@ def _correct_tile(
     target_name: str,
 ) -> tuple[Image.Image, float, float, list[tuple[str, int]]]:
     target_latitude, target_longitude = _parse_name(target_name)
-    compression = math.cos(math.radians(abs(target_latitude)))
+    center_latitude = target_latitude + TILE_DEGREES / 2.0
+    compression = math.cos(math.radians(abs(center_latitude)))
     source_width = CANVAS_SIZE / compression
     crop_start = (CANVAS_SIZE - source_width) / 2.0
     crop_end = crop_start + source_width
@@ -112,7 +114,7 @@ def correct_subset(
     output_labels = {}
     tile_reports = []
 
-    for target_stem in targets:
+    for target_stem in tqdm(targets, desc="Correcting tiles", unit="tile"):
         target_name = f"{target_stem}_original.png"
         if target_name not in available_tiles:
             raise FileNotFoundError(image_dir / target_name)

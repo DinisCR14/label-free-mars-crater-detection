@@ -133,7 +133,8 @@ def _transform_labels(
     target_name: str,
 ) -> list[list[float]]:
     target_latitude, target_longitude = _parse_name(target_name)
-    compression = math.cos(math.radians(abs(target_latitude)))
+    center_latitude = target_latitude + TILE_DEGREES / 2.0
+    compression = math.cos(math.radians(abs(center_latitude)))
     corrected_tile_width = CANVAS_SIZE * compression
     corrected_tile_start = (CANVAS_SIZE - corrected_tile_width) / 2.0
     transformed: list[list[float]] = []
@@ -199,7 +200,7 @@ def generate_corrected_labels(
             "tile_extent_degrees": TILE_DEGREES,
             "pixels_per_degree": PIXELS_PER_DEGREE,
             "neighbor_order": "2-degree longitude offsets; missing tiles remain gaps",
-            "horizontal_correction": "cos(abs(latitude)) compression",
+            "horizontal_correction": "cos(abs(tile-center latitude)) compression",
             "vertical_correction": "none",
             "catalog_longitudes": "normalized from 0..360 to -180..180",
         },

@@ -69,49 +69,69 @@ python tools/dataset/compare_catalog_versions.py \
     /data/mars/catalogues/catalogue_comparison_report.json
 ```
 
+### Future work: using the 2014 or 2020 catalogue
+
+The 2012, 2014, and 2020 catalogues must be treated as separate annotation
+versions. The supplied `regularhd-large/labels.json` has been reproduced from
+the 2012 catalogue and remains the current reference version. Do not replace
+it with a later catalogue without first generating and validating a separate
+label set.
+
+There are two distinct transformations in this work:
+
+1. **Image correction:** remosaicking neighboring source images and applying
+    horizontal compression by `cos(abs(tile-center latitude))`. This corrects
+    the image geometry and should be the same regardless of which catalogue is
+    used.
+2. **Catalogue-to-pixel projection:** converting a catalogue's geographic
+    coordinates, diameters, and ellipse properties into source-image pixels.
+    This may be catalogue-version-specific.
+
+The 2014 changelog says that all image-based latitude, longitude, diameter, and
+ellipse properties were updated using great-circle distances via Vincenty's
+formulae, replacing the 2012 catalogue's simpler `cos(latitude)` projection.
+The 2014 release also changed crater IDs, removed incomplete morphology and
+depth fields below 3 km, and revised confidence and naming metadata. These
+changes mean that differences from 2012 are not automatically evidence of
+manual relabeling or improved crater boundaries.
+
+The 2020 catalogue keeps most 2014 crater correspondences but applies an
+automatic coordinate adjustment. It uses different column names, stores
+longitudes in `0..360` rather than `-180..180`, and contains roughly 1,105
+craters not matched to 2014. The accompanying catalogue review reports that
+the direct 2012-versus-2020 analysis, latitude-dependent effects, and the choice
+between circle and ellipse coordinates remain open questions.
+
+To evaluate a later catalogue, create a separate catalogue-specific label
+generation path. It should normalize longitude conventions, identify the
+correct coordinate and ellipse fields, reproduce the relevant catalogue
+projection, and then apply the common image correction. Compare the resulting
+labels with the 2012 reference using numerical residuals and visual overlays,
+especially for large center or diameter changes and high-latitude tiles. Keep
+the 2014 or 2020 output as an alternative reference version until this review
+is complete; do not use it as canonical ground truth solely because it is newer.
+
 ## Corrected 2012 baseline
 
 The supplied `regularhd-large` archive is the trusted 2012 image/label pair. The correction pipeline is run with the scripts in `tools/dataset/` and writes a separate output directory; it never modifies the source archive. The source archive and all generated datasets should remain outside this repository.
 
-First audit the source-image coverage needed by the remosaicking step:
+The complete correction can be run with one command. It writes the coverage manifest and all other intermediate and final artifacts inside the output directory:
 
 ```bash
-python tools/dataset/audit_correction_coverage.py \
-    /data/mars/regularhd-large \
-    /data/mars/robbins2020-work/correction_coverage_manifest.json
-```
-
-Then generate corrected images, overlays, correction metadata, and unfiltered transformed labels:
-
-```bash
-python tools/dataset/correct_reference_dataset.py \
-    /data/mars/regularhd-large/labels.json \
+python tools/dataset/create_corrected_dataset.py \
     /data/mars/regularhd-large \
     /data/mars/regularhd-large-corrected-2012 \
-    --coverage-manifest /data/mars/robbins2020-work/correction_coverage_manifest.json \
-    --all
+    --labels /data/mars/regularhd-large/labels.json
 ```
 
-Finally create the canonical labels by removing only fully invisible ellipses and conservative within-tile duplicates:
+The command runs the four stages below in order. To run them separately for debugging or partial reruns, use the individual scripts:
 
-```bash
-python tools/dataset/filter_corrected_labels.py \
-    /data/mars/regularhd-large-corrected-2012/labels_unfiltered.json \
-    /data/mars/regularhd-large-corrected-2012/labels.json \
-    /data/mars/regularhd-large-corrected-2012/label_filter_report.json
-```
+- `audit_correction_coverage.py`
+- `correct_reference_dataset.py`
+- `filter_corrected_labels.py`
+- `build_corrected_manifest.py`
 
-Build the final per-tile manifest from the three reports:
-
-```bash
-python tools/dataset/build_corrected_manifest.py \
-    /data/mars/regularhd-large-corrected-2012/correction_report.json \
-    /data/mars/regularhd-large-corrected-2012/label_filter_report.json \
-    /data/mars/robbins2020-work/correction_coverage_manifest.json \
-    /data/mars/regularhd-large-corrected-2012/dataset_manifest.json
-```
-
-The corrected images are latitude-row mosaics compressed horizontally by `cos(abs(latitude))`. Consequently, a corrected tile can contain labels from neighboring source tiles and the same crater can occur in multiple overlapping corrected tiles. The canonical `labels.json` keeps ellipses that intersect the output canvas, including ellipses whose centers are outside the canvas, and removes only fully invisible ellipses and conservative within-tile duplicates. The correction report records complete versus gapped source neighborhoods; gapped tiles contain black regions where source imagery is unavailable.
+The corrected images are latitude-row mosaics compressed horizontally by `cos(abs(tile-center latitude))`, where the tile-center latitude is the filename latitude plus half the 2-degree tile extent. Consequently, a corrected tile can contain labels from neighboring source tiles and the same crater can occur in multiple overlapping corrected tiles. The canonical `labels.json` keeps ellipses that intersect the output canvas, including ellipses whose centers are outside the canvas, and removes only fully invisible ellipses and conservative within-tile duplicates. The correction report records complete versus gapped source neighborhoods; gapped tiles contain black regions where source imagery is unavailable.
 
 The final external dataset contains `labels.json`, `labels_unfiltered.json`, `correction_report.json`, `label_filter_report.json`, `dataset_manifest.json`, and corrected overlay previews. The validated run predates this standard naming and uses `labels_visible_deduplicated_report.json` for the filter report; it is otherwise equivalent. Keep this generated dataset outside the repository. The canonical labels from the validated run contain 485,267 ellipses; the unfiltered correction report contains 1,152,607 transformed labels before visibility filtering and deduplication.
 

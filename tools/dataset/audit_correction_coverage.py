@@ -29,7 +29,8 @@ def _longitude_offset(source_longitude: float, target_longitude: float) -> int:
 
 
 def _required_offsets(latitude: float) -> list[int]:
-    compression = math.cos(math.radians(abs(latitude)))
+    center_latitude = latitude + TILE_DEGREES / 2.0
+    compression = math.cos(math.radians(abs(center_latitude)))
     source_width = CANVAS_SIZE / compression
     crop_start = (CANVAS_SIZE - source_width) / 2.0
     crop_end = crop_start + source_width
@@ -80,7 +81,7 @@ def audit(image_dir: Path) -> dict:
 
     return {
         "transform": {
-            "horizontal_model": "cos(abs(latitude)) compression",
+            "horizontal_model": "cos(abs(tile-center latitude)) compression",
             "tile_extent_degrees": TILE_DEGREES,
             "canvas_size": int(CANVAS_SIZE),
         },
