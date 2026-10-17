@@ -24,8 +24,12 @@ def _read_image_list(image_list: Path, dataset_root: Path) -> list[Path]:
     return paths
 
 
+def _discover_images(image_root: Path) -> list[Path]:
+    return sorted(image_root.glob("*_corrected.png"))
+
+
 def _as_mask_array(masks: Any) -> np.ndarray:
-    masks = masks.detach().cpu().numpy() if hasattr(masks, "detach") else np.asarray(masks)
+    masks = masks.detach().float().cpu().numpy() if hasattr(masks, "detach") else np.asarray(masks)
     if masks.ndim == 4 and masks.shape[1] == 1:
         masks = masks[:, 0]
     if masks.ndim != 3:
@@ -34,7 +38,7 @@ def _as_mask_array(masks: Any) -> np.ndarray:
 
 
 def _as_box_array(boxes: Any) -> np.ndarray:
-    boxes = boxes.detach().cpu().numpy() if hasattr(boxes, "detach") else np.asarray(boxes)
+    boxes = boxes.detach().float().cpu().numpy() if hasattr(boxes, "detach") else np.asarray(boxes)
     boxes = np.asarray(boxes, dtype=np.float32)
     if boxes.size == 0:
         return boxes.reshape(0, 4)
@@ -44,7 +48,7 @@ def _as_box_array(boxes: Any) -> np.ndarray:
 
 
 def _as_score_array(scores: Any) -> np.ndarray:
-    scores = scores.detach().cpu().numpy() if hasattr(scores, "detach") else np.asarray(scores)
+    scores = scores.detach().float().cpu().numpy() if hasattr(scores, "detach") else np.asarray(scores)
     return np.asarray(scores, dtype=np.float32).reshape(-1)
 
 
@@ -74,10 +78,38 @@ def _mask_annotation(
     }
 
 
+def _write_json_atomic(path: Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = path.with_suffix(path.suffix + ".tmp")
+    with temporary_path.open("w", encoding="utf-8") as handle:
+        json.dump(payload, handle)
+    temporary_path.replace(path)
+
+
+def _load_prediction(path: Path, image_id: int, file_name: str) -> dict | None:
+    try:
+        with path.open(encoding="utf-8") as handle:
+            prediction = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return None
+    image = prediction.get("image", {})
+    if image.get("id") != image_id or image.get("file_name") != file_name:
+        return None
+    if not isinstance(prediction.get("annotations"), list):
+        return None
+    return prediction
+
+
 class SAM3Predictor:
     """Load SAM 3 once and run text concept prompts on image batches."""
 
-    def __init__(self, *, device: str = "auto", bpe_path: str | Path | None = None):
+    def __init__(
+        self,
+        *,
+        device: str = "auto",
+        bpe_path: str | Path | None = None,
+        detection_threshold: float = 0.5,
+    ):
         import torch
         import sam3
         from sam3 import build_sam3_image_model
@@ -130,7 +162,7 @@ class SAM3Predictor:
             use_original_sizes_box=True,
             use_original_sizes_mask=True,
             convert_mask_to_rle=False,
-            detection_threshold=0.0,
+            detection_threshold=detection_threshold,
             to_cpu=True,
         )
 
@@ -212,13 +244,72 @@ def generate_coco_annotations(
     prompt: str,
     score_threshold: float = 0.0,
     batch_size: int = 4,
+    prediction_dir: str | Path | None = None,
+    resume: bool = False,
 ) -> None:
-    """Generate raw SAM 3 concept predictions in COCO format."""
+    """Generate raw SAM 3 predictions with resumable per-image checkpoints."""
     from pycocotools import mask as mask_utils
 
     if batch_size < 1:
         raise ValueError("batch_size must be positive")
     image_paths = [Path(image_path) for image_path in image_paths]
+    output_json = Path(output_json)
+    if prediction_dir is None:
+        prediction_dir = output_json.parent / f"{output_json.stem}_predictions"
+    prediction_dir = Path(prediction_dir)
+    prediction_dir.mkdir(parents=True, exist_ok=True)
+
+    for batch_start in tqdm(range(0, len(image_paths), batch_size), desc="SAM 3"):
+        batch_paths = image_paths[batch_start : batch_start + batch_size]
+        pending_paths = []
+        pending_offsets = []
+        for batch_offset, image_path in enumerate(batch_paths):
+            image_id = batch_start + batch_offset
+            checkpoint_path = prediction_dir / f"{image_id:08d}.json"
+            if resume and _load_prediction(checkpoint_path, image_id, image_path.name) is not None:
+                continue
+            pending_paths.append(image_path)
+            pending_offsets.append(batch_offset)
+        batch_results = (
+            predictor.predict_batch(pending_paths, prompt) if pending_paths else {}
+        )
+        for pending_offset, batch_offset in enumerate(pending_offsets):
+            image_path = batch_paths[batch_offset]
+            image_id = batch_start + batch_offset
+            image = cv2.imread(str(image_path), cv2.IMREAD_COLOR)
+            if image is None:
+                raise FileNotFoundError(f"Could not read image: {image_path}")
+            height, width = image.shape[:2]
+            result = batch_results[pending_offset]
+            mask_array = _as_mask_array(result["masks"])
+            box_array = _as_box_array(result["boxes"])
+            score_array = _as_score_array(result["scores"])
+            if not (len(mask_array) == len(box_array) == len(score_array)):
+                raise ValueError("SAM 3 returned different numbers of masks, boxes, and scores")
+            annotations = []
+            for local_annotation_id, (mask, box, score) in enumerate(
+                zip(mask_array, box_array, score_array), start=1
+            ):
+                if score < score_threshold:
+                    continue
+                annotation = _mask_annotation(
+                    mask, image_id, local_annotation_id, score, mask_utils
+                )
+                if annotation is not None:
+                    annotation["sam3_box"] = [float(value) for value in box]
+                    annotations.append(annotation)
+            _write_json_atomic(
+                prediction_dir / f"{image_id:08d}.json",
+                {
+                    "image": {
+                        "id": image_id,
+                        "file_name": image_path.name,
+                        "width": width,
+                        "height": height,
+                    },
+                    "annotations": annotations,
+                },
+            )
 
     coco = {
         "images": [],
@@ -226,54 +317,37 @@ def generate_coco_annotations(
         "categories": [{"id": 1, "name": "crater"}],
     }
     annotation_id = 1
-    for batch_start in tqdm(range(0, len(image_paths), batch_size), desc="SAM 3"):
-        batch_paths = image_paths[batch_start : batch_start + batch_size]
-        batch_results = predictor.predict_batch(batch_paths, prompt)
-        for batch_offset, image_path in enumerate(batch_paths):
-            image_id = batch_start + batch_offset
-            image = cv2.imread(str(image_path), cv2.IMREAD_COLOR)
-            if image is None:
-                raise FileNotFoundError(f"Could not read image: {image_path}")
-            height, width = image.shape[:2]
-            coco["images"].append({
-                "id": image_id,
-                "file_name": image_path.name,
-                "width": width,
-                "height": height,
-            })
+    for image_id, image_path in enumerate(image_paths):
+        prediction = _load_prediction(
+            prediction_dir / f"{image_id:08d}.json", image_id, image_path.name
+        )
+        if prediction is None:
+            raise RuntimeError(f"Missing or invalid prediction checkpoint for {image_path}")
+        coco["images"].append(prediction["image"])
+        for annotation in prediction["annotations"]:
+            annotation["id"] = annotation_id
+            coco["annotations"].append(annotation)
+            annotation_id += 1
 
-            result = batch_results[batch_offset]
-            mask_array = _as_mask_array(result["masks"])
-            box_array = _as_box_array(result["boxes"])
-            score_array = _as_score_array(result["scores"])
-            if not (len(mask_array) == len(box_array) == len(score_array)):
-                raise ValueError("SAM 3 returned different numbers of masks, boxes, and scores")
-            for mask, box, score in zip(mask_array, box_array, score_array):
-                if score < score_threshold:
-                    continue
-                annotation = _mask_annotation(mask, image_id, annotation_id, score, mask_utils)
-                if annotation is not None:
-                    annotation["sam3_box"] = [float(value) for value in box]
-                    coco["annotations"].append(annotation)
-                    annotation_id += 1
-
-    output_json = Path(output_json)
-    output_json.parent.mkdir(parents=True, exist_ok=True)
-    with output_json.open("w", encoding="utf-8") as handle:
-        json.dump(coco, handle)
+    _write_json_atomic(output_json, coco)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset-root", type=Path, default=Path("."))
-    parser.add_argument("--image-list", type=Path, required=True)
+    image_source = parser.add_mutually_exclusive_group(required=True)
+    image_source.add_argument("--image-list", type=Path)
+    image_source.add_argument("--image-root", type=Path)
     parser.add_argument("--output-json", type=Path, required=True)
-    parser.add_argument("--prompt", default="crater")
+    parser.add_argument("--prompt", default="circle")
+    parser.add_argument("--detection-threshold", type=float, default=0.5)
     parser.add_argument("--score-threshold", type=float, default=0.0)
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument("--bpe-path", type=Path)
+    parser.add_argument("--prediction-dir", type=Path)
     parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
     parser.add_argument("--limit", type=int)
+    parser.add_argument("--resume", action="store_true")
     args = parser.parse_args()
 
     if args.limit is not None and args.limit < 1:
@@ -281,10 +355,23 @@ def main() -> None:
     if args.batch_size < 1:
         parser.error("--batch-size must be positive")
 
-    image_paths = _read_image_list(args.image_list, args.dataset_root.resolve())
+    if args.image_list is not None:
+        image_paths = _read_image_list(args.image_list, args.dataset_root.resolve())
+    else:
+        image_paths = _discover_images(args.image_root.resolve())
+    if not image_paths:
+        parser.error("no corrected images found")
     if args.limit is not None:
         image_paths = image_paths[:args.limit]
-    predictor = SAM3Predictor(device=args.device, bpe_path=args.bpe_path)
+    if not 0.0 <= args.detection_threshold <= 1.0:
+        parser.error("--detection-threshold must be between 0 and 1")
+    if not 0.0 <= args.score_threshold <= 1.0:
+        parser.error("--score-threshold must be between 0 and 1")
+    predictor = SAM3Predictor(
+        device=args.device,
+        bpe_path=args.bpe_path,
+        detection_threshold=args.detection_threshold,
+    )
     generate_coco_annotations(
         image_paths,
         args.output_json,
@@ -292,6 +379,8 @@ def main() -> None:
         prompt=args.prompt,
         score_threshold=args.score_threshold,
         batch_size=args.batch_size,
+        prediction_dir=args.prediction_dir,
+        resume=args.resume,
     )
 
 

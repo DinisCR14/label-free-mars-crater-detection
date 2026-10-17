@@ -118,6 +118,31 @@ Pass its local path to detector training with `--initial-weights`:
 
 The self-training and final stages use checkpoints produced by the preceding stages under `--output-root`; they do not require additional downloaded model files. Do not commit imagery, annotations, checkpoints, or generated runs.
 
+### SAM 3 batch inference
+
+The repository also includes an experimental SAM 3 batch runner in
+`crater_detection/sam3_label_generation.py`. Install the official SAM 3 package
+in the active environment according to its release instructions, then run a
+small subset before launching the full corrected dataset. The runner can
+discover corrected tiles directly:
+
+```bash
+python crater_detection/sam3_label_generation.py \
+  --image-root /home/dcortereal/datasets/corrected-centerlat \
+  --output-json /home/dcortereal/datasets/sam3-runs/corrected-centerlat.json \
+  --prediction-dir /home/dcortereal/datasets/sam3-runs/corrected-centerlat-predictions \
+  --prompt crater \
+  --batch-size 4 \
+  --device cuda
+```
+
+Each image is checkpointed atomically as a JSON file containing its COCO RLE
+masks, bounding boxes, and scores. The final output is a COCO JSON file with
+all images and annotations. If the process is interrupted, rerun the same
+command with `--resume`; completed per-image checkpoints are skipped and only
+missing or invalid predictions are recomputed. The output and checkpoint
+directories should remain outside the repository.
+
 ## Step-by-Step Usage
 
 ### 1. Generate pseudo-labels
