@@ -153,7 +153,7 @@ python crater_detection/grounding_dino_label_generation.py \
   --image-root /home/dcortereal/datasets/corrected-centerlat \
   --output-json /home/dcortereal/datasets/dino-runs/full-corrected-centerlat/dino-circle.json \
   --prediction-dir /home/dcortereal/datasets/dino-runs/full-corrected-centerlat/predictions \
-  --prompt circle \
+  --prompt circle. \
   --box-threshold 0.30 \
   --text-threshold 0.25 \
   --batch-size 1 \
@@ -163,6 +163,19 @@ python crater_detection/grounding_dino_label_generation.py \
 
 The runner discovers `*_corrected.png` files, writes bbox-only COCO predictions,
 and checkpoints each image atomically so interrupted runs can resume.
+
+### Prediction image mapping invariant
+
+All prediction files that will be compared against one ground-truth file must
+use the same `(image_id, file_name)` mapping. The current SAM 3 and Grounding
+DINO runners achieve this by discovering the same `*_corrected.png` files and
+assigning IDs from the same sorted order; this mapping has been verified to be
+identical for the full corrected-centerlat runs.
+
+Planned improvement: create one canonical corrected-image manifest and have
+every inference runner consume it, then validate the prediction mappings before
+metric evaluation. This will make the shared ground truth explicit and prevent
+future evaluations from silently comparing mismatched image IDs.
 
 ## Step-by-Step Usage
 

@@ -15,7 +15,7 @@ from tqdm import tqdm
 
 
 DEFAULT_MODEL_ID = "IDEA-Research/grounding-dino-base"
-DEFAULT_PROMPT = "circle"
+DEFAULT_PROMPT = "circle."
 DEFAULT_BOX_THRESHOLD = 0.30
 DEFAULT_TEXT_THRESHOLD = 0.25
 
