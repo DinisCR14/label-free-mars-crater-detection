@@ -143,6 +143,27 @@ command with `--resume`; completed per-image checkpoints are skipped and only
 missing or invalid predictions are recomputed. The output and checkpoint
 directories should remain outside the repository.
 
+### Grounding DINO-only batch inference
+
+For box-only Grounding DINO predictions without SAM mask generation, use
+`crater_detection/grounding_dino_label_generation.py`:
+
+```bash
+python crater_detection/grounding_dino_label_generation.py \
+  --image-root /home/dcortereal/datasets/corrected-centerlat \
+  --output-json /home/dcortereal/datasets/dino-runs/full-corrected-centerlat/dino-circle.json \
+  --prediction-dir /home/dcortereal/datasets/dino-runs/full-corrected-centerlat/predictions \
+  --prompt circle \
+  --box-threshold 0.30 \
+  --text-threshold 0.25 \
+  --batch-size 1 \
+  --device cuda \
+  --resume
+```
+
+The runner discovers `*_corrected.png` files, writes bbox-only COCO predictions,
+and checkpoints each image atomically so interrupted runs can resume.
+
 ## Step-by-Step Usage
 
 ### 1. Generate pseudo-labels
