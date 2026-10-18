@@ -212,6 +212,29 @@ python crater_detection/export_coco.py \
 
 The converter emits COCO polygon segmentations and bounding boxes. `--clip-bboxes` is intended for test ground truth so boxes are evaluated under the same in-image constraint as detector predictions. It does not alter the ellipse segmentation or the pseudo-label training workflow.
 
+For predictions that already contain a COCO `images` list, use `--image-metadata-json` to align label keys with prediction image IDs without reading the source images:
+
+```bash
+python crater_detection/export_coco.py \
+    --ellipse-labels /data/mars/labels.json \
+    --image-metadata-json /data/mars-runs/sam3/predictions.json \
+    --output-json /data/mars-runs/sam3/ground_truth.json
+```
+
+## Visualize COCO predictions
+
+Render prediction masks, bounding boxes, and confidence scores on the source images:
+
+```bash
+python tools/dataset/render_coco_prediction_overlays.py \
+    /data/mars-runs/sam3/predictions.json \
+    /data/mars/corrected \
+    /data/mars-runs/sam3/overlays \
+    --score-threshold 0.4
+```
+
+Use `--limit 8` for a quick sample, `--target IMAGE_NAME` to select specific images, and `--max-detections 100` to cap detections per image.
+
 ## Evaluate the final detector
 
 After training, evaluate the final standard-loss checkpoint against the clipped test ground truth. Run this from the repository root and replace the checkpoint path if your output directory differs:

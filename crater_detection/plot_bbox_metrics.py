@@ -9,6 +9,7 @@ from typing import Iterable
 
 import matplotlib.pyplot as plt
 import numpy as np
+from tqdm import tqdm
 
 
 SIZE_ORDER = ("small", "medium", "large")
@@ -99,7 +100,11 @@ def evaluate_model(
 ) -> dict[str, list[float]]:
     values = {metric: [] for metric in METRIC_ORDER}
     image_ids = set(ground_truth) | set(predictions)
-    for iou_threshold in iou_thresholds:
+    for iou_threshold in tqdm(
+        iou_thresholds,
+        desc=f"Metrics ({size or 'all'})",
+        leave=False,
+    ):
         counts = [0, 0, 0]
         for image_id in image_ids:
             image_ground_truth = ground_truth.get(image_id, [])

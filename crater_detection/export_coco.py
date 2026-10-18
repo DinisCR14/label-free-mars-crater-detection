@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from PIL import Image
+from tqdm import tqdm
 
 COCO_CATEGORIES = [{"id": 1, "name": "crater", "supercategory": "crater"}]
 ELLIPSE_POINT_COUNT = 72
@@ -93,6 +94,106 @@ def _image_paths(image_root: Path, image_list: Path | None) -> list[Path]:
     return sorted(image_root.glob("**/*_original.*"))
 
 
+def _image_key(file_name: str) -> str:
+    stem = Path(file_name).stem
+    return stem.removesuffix("_corrected").removesuffix("_original")
+
+
+def _ellipse_annotations(
+    labels: list[list[float]],
+    image_id: int,
+    image_key: str,
+    *,
+    width: int | None = None,
+    height: int | None = None,
+    clip_bboxes: bool = False,
+    annotation_id_start: int = 1,
+) -> tuple[list[dict[str, Any]], int]:
+    annotations = []
+    annotation_id = annotation_id_start
+    for label in labels:
+        if not isinstance(label, (list, tuple)) or len(label) != 4:
+            raise ValueError(f"Invalid ellipse label for {image_key}: {label!r}")
+        center_x, center_y, radius_x, radius_y = (float(value) for value in label)
+        if radius_x <= 0 or radius_y <= 0:
+            raise ValueError(f"Ellipse radii must be positive for {image_key}: {label!r}")
+        x = center_x - radius_x
+        y = center_y - radius_y
+        box_width = 2.0 * radius_x
+        box_height = 2.0 * radius_y
+        if clip_bboxes:
+            if width is None or height is None:
+                raise ValueError("clipping requires image width and height")
+            x2 = min(x + box_width, width)
+            y2 = min(y + box_height, height)
+            x = max(x, 0.0)
+            y = max(y, 0.0)
+            box_width = x2 - x
+            box_height = y2 - y
+            if box_width <= 0 or box_height <= 0:
+                continue
+        annotations.append({
+            "id": annotation_id,
+            "image_id": image_id,
+            "category_id": 1,
+            "segmentation": [_ellipse_polygon(center_x, center_y, radius_x, radius_y)],
+            "area": math.pi * radius_x * radius_y,
+            "bbox": [x, y, box_width, box_height],
+            "iscrowd": 0,
+        })
+        annotation_id += 1
+    return annotations, annotation_id
+
+
+def convert_ellipse_labels_with_metadata(
+    labels_json: str | Path,
+    image_metadata_json: str | Path,
+    output_json: str | Path,
+    *,
+    clip_bboxes: bool = False,
+) -> None:
+    """Convert ellipse labels using image metadata without reading image files."""
+    labels_json = Path(labels_json)
+    image_metadata_json = Path(image_metadata_json)
+    output_json = Path(output_json)
+    with labels_json.open("r", encoding="utf-8") as handle:
+        labels_by_image = json.load(handle)
+    with image_metadata_json.open("r", encoding="utf-8") as handle:
+        metadata = json.load(handle)
+
+    images = copy.deepcopy(metadata.get("images", []))
+    annotations = []
+    annotation_id = 1
+    seen_keys = set()
+    for image in tqdm(images, desc="COCO ground truth"):
+        image_id = int(image["id"])
+        image_key = _image_key(image["file_name"])
+        if image_key in seen_keys:
+            raise ValueError(f"duplicate image key in metadata: {image_key}")
+        seen_keys.add(image_key)
+        image_annotations, annotation_id = _ellipse_annotations(
+            labels_by_image.get(image_key, []),
+            image_id,
+            image_key,
+            width=image.get("width"),
+            height=image.get("height"),
+            clip_bboxes=clip_bboxes,
+            annotation_id_start=annotation_id,
+        )
+        annotations.extend(image_annotations)
+
+    output = {
+        "info": {"description": "Mars crater ground-truth ellipses converted to COCO"},
+        "licenses": [],
+        "images": images,
+        "annotations": annotations,
+        "categories": copy.deepcopy(COCO_CATEGORIES),
+    }
+    output_json.parent.mkdir(parents=True, exist_ok=True)
+    with output_json.open("w", encoding="utf-8") as handle:
+        json.dump(output, handle)
+
+
 def convert_ellipse_labels_to_coco(
     labels_json: str | Path,
     image_root: str | Path,
@@ -112,7 +213,8 @@ def convert_ellipse_labels_to_coco(
     images = []
     annotations = []
     annotation_id = 1
-    for image_id, image_path in enumerate(_image_paths(image_root, image_list_path)):
+    image_paths = _image_paths(image_root, image_list_path)
+    for image_id, image_path in enumerate(tqdm(image_paths, desc="COCO ground truth")):
         if not image_path.is_file():
             raise FileNotFoundError(f"Could not read image: {image_path}")
         relative_name = image_path.relative_to(image_root).as_posix()
@@ -125,36 +227,16 @@ def convert_ellipse_labels_to_coco(
             "height": height,
         })
 
-        image_key = image_path.stem.removesuffix("_original")
-        for label in labels_by_image.get(image_key, []):
-            if not isinstance(label, (list, tuple)) or len(label) != 4:
-                raise ValueError(f"Invalid ellipse label for {image_key}: {label!r}")
-            center_x, center_y, radius_x, radius_y = (float(value) for value in label)
-            if radius_x <= 0 or radius_y <= 0:
-                raise ValueError(f"Ellipse radii must be positive for {image_key}: {label!r}")
-            x = center_x - radius_x
-            y = center_y - radius_y
-            box_width = 2.0 * radius_x
-            box_height = 2.0 * radius_y
-            if clip_bboxes:
-                x2 = min(x + box_width, width)
-                y2 = min(y + box_height, height)
-                x = max(x, 0.0)
-                y = max(y, 0.0)
-                box_width = x2 - x
-                box_height = y2 - y
-                if box_width <= 0 or box_height <= 0:
-                    continue
-            annotations.append({
-                "id": annotation_id,
-                "image_id": image_id,
-                "category_id": 1,
-                "segmentation": [_ellipse_polygon(center_x, center_y, radius_x, radius_y)],
-                "area": math.pi * radius_x * radius_y,
-                "bbox": [x, y, box_width, box_height],
-                "iscrowd": 0,
-            })
-            annotation_id += 1
+        image_annotations, annotation_id = _ellipse_annotations(
+            labels_by_image.get(image_key, []),
+            image_id,
+            image_key,
+            width=width,
+            height=height,
+            clip_bboxes=clip_bboxes,
+            annotation_id_start=annotation_id,
+        )
+        annotations.extend(image_annotations)
 
     output = {
         "info": {"description": "Mars crater ground-truth ellipses converted to COCO"},
@@ -173,6 +255,7 @@ def main() -> None:
     parser.add_argument("source_json", type=Path, nargs="?")
     parser.add_argument("output_json", type=Path, nargs="?")
     parser.add_argument("--ellipse-labels", type=Path)
+    parser.add_argument("--image-metadata-json", type=Path)
     parser.add_argument("--image-root", type=Path)
     parser.add_argument("--image-list", type=Path)
     parser.add_argument("--output-json", dest="output_json_option", type=Path)
@@ -180,15 +263,25 @@ def main() -> None:
     args = parser.parse_args()
     output_json = args.output_json_option or args.output_json
     if args.ellipse_labels is not None:
-        if args.image_root is None or output_json is None:
-            parser.error("ellipse conversion requires --image-root and --output-json")
-        convert_ellipse_labels_to_coco(
-            args.ellipse_labels,
-            args.image_root,
-            output_json,
-            image_list=args.image_list,
-            clip_bboxes=args.clip_bboxes,
-        )
+        if output_json is None:
+            parser.error("ellipse conversion requires --output-json")
+        if args.image_metadata_json is not None:
+            convert_ellipse_labels_with_metadata(
+                args.ellipse_labels,
+                args.image_metadata_json,
+                output_json,
+                clip_bboxes=args.clip_bboxes,
+            )
+        else:
+            if args.image_root is None:
+                parser.error("ellipse conversion requires --image-root or --image-metadata-json")
+            convert_ellipse_labels_to_coco(
+                args.ellipse_labels,
+                args.image_root,
+                output_json,
+                image_list=args.image_list,
+                clip_bboxes=args.clip_bboxes,
+            )
     elif args.source_json is not None and output_json is not None:
         export_coco_annotations(args.source_json, output_json)
     else:
