@@ -221,6 +221,26 @@ python crater_detection/export_coco.py \
     --output-json /data/mars-runs/sam3/ground_truth.json
 ```
 
+For the corrected-centerlat experiment, keep detector-independent evaluation
+files together under `/home/dcortereal/datasets/ground-truth/corrected-centerlat/`.
+Generate the raw and clipped variants from the same image metadata:
+
+```bash
+python crater_detection/export_coco.py \
+    --ellipse-labels /home/dcortereal/datasets/corrected-centerlat/labels.json \
+    --image-metadata-json /home/dcortereal/datasets/sam3-runs/full-corrected-centerlat/sam3-circle-threshold-04.json \
+    --output-json /home/dcortereal/datasets/ground-truth/corrected-centerlat/corrected-centerlat-raw.json
+
+python crater_detection/export_coco.py \
+    --ellipse-labels /home/dcortereal/datasets/corrected-centerlat/labels.json \
+    --image-metadata-json /home/dcortereal/datasets/sam3-runs/full-corrected-centerlat/sam3-circle-threshold-04.json \
+    --output-json /home/dcortereal/datasets/ground-truth/corrected-centerlat/corrected-centerlat-clipped.json \
+    --clip-bboxes
+```
+
+Use `corrected-centerlat-clipped.json` for image-bounded detector evaluation;
+preserve `corrected-centerlat-raw.json` as the unmodified reference geometry.
+
 ## Visualize COCO predictions
 
 Render prediction masks, bounding boxes, and confidence scores on the source images:

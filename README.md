@@ -172,10 +172,19 @@ DINO runners achieve this by discovering the same `*_corrected.png` files and
 assigning IDs from the same sorted order; this mapping has been verified to be
 identical for the full corrected-centerlat runs.
 
-Planned improvement: create one canonical corrected-image manifest and have
-every inference runner consume it, then validate the prediction mappings before
-metric evaluation. This will make the shared ground truth explicit and prevent
-future evaluations from silently comparing mismatched image IDs.
+The shared corrected-centerlat evaluation ground truth is kept independently of
+any detector run under
+`/home/dcortereal/datasets/ground-truth/corrected-centerlat/`:
+
+- `corrected-centerlat-raw.json` preserves the complete reference ellipses and
+  their original out-of-frame bounding boxes.
+- `corrected-centerlat-clipped.json` clips only the COCO bounding boxes to the
+  image boundaries for detector evaluation. The ellipse polygon segmentations
+  remain unchanged.
+
+Both files use the same 12,264-image mapping as the SAM 3 and Grounding DINO
+runs. Use the clipped file when evaluating image-bounded detector boxes, and
+retain the raw file for provenance and geometry audits.
 
 ## Step-by-Step Usage
 
