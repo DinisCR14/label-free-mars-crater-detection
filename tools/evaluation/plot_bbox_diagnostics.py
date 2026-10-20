@@ -23,7 +23,8 @@ from tools.evaluation.evaluate_coco_bbox import (
 
 
 SIZE_ORDER = ("small", "medium", "large")
-METRIC_ORDER = ("precision", "recall", "f1", "detection_jaccard")
+# Add "detection_jaccard" here if that supplementary metric is needed again.
+METRIC_ORDER = ("precision", "recall", "f1")
 AREA_LIMITS = (0.0, float(np.pi * 5**2), float(np.pi * 20**2), 1e10)
 
 
@@ -118,16 +119,16 @@ def _metric_values(
         else 0.0
     )
     f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
-    detection_jaccard = (
-        true_positive / (true_positive + false_positive + false_negative)
-        if true_positive + false_positive + false_negative
-        else 0.0
-    )
+    # detection_jaccard = (
+    #     true_positive / (true_positive + false_positive + false_negative)
+    #     if true_positive + false_positive + false_negative
+    #     else 0.0
+    # )
     return {
         "precision": precision,
         "recall": recall,
         "f1": f1,
-        "detection_jaccard": detection_jaccard,
+        # "detection_jaccard": detection_jaccard,
     }
 
 
@@ -163,36 +164,40 @@ def evaluate_model(
 def _plot(
     evaluated: dict[str, dict[str, dict[str, list[float]]]],
     thresholds: list[float],
-    output_path: Path,
+    output_dir: Path,
 ) -> None:
-    figure, axes = plt.subplots(
-        len(SIZE_ORDER) + 1,
-        len(METRIC_ORDER),
-        squeeze=False,
-        figsize=(16, 4 * (len(SIZE_ORDER) + 1)),
-    )
-    for row, size in enumerate((None, *SIZE_ORDER)):
-        for column, metric in enumerate(METRIC_ORDER):
-            axis = axes[row, column]
-            key = size or "all"
-            for label, model_values in evaluated.items():
-                axis.plot(
-                    thresholds,
-                    model_values[key][metric],
-                    ".-",
-                    linewidth=2,
-                    label=label,
-                )
-            axis.set_title(f"{metric.replace('_', ' ').title()} ({key})")
-            axis.set_xlabel("IoU threshold")
-            axis.set_ylabel(metric.replace("_", " ").title())
-            axis.set_ylim(0, 1.05)
-            axis.grid(True)
-            axis.legend()
-    figure.tight_layout()
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    figure.savefig(output_path, dpi=200)
-    plt.close(figure)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    for sizes, filename, title in (
+        (("all",), "greedy_bbox_metrics_all.png", "All detections"),
+        (SIZE_ORDER, "greedy_bbox_metrics_by_size.png", "By ground-truth size"),
+    ):
+        figure, axes = plt.subplots(
+            len(sizes),
+            len(METRIC_ORDER),
+            squeeze=False,
+            figsize=(15, 4 * len(sizes)),
+        )
+        for row, size in enumerate(sizes):
+            for column, metric in enumerate(METRIC_ORDER):
+                axis = axes[row, column]
+                for label, model_values in evaluated.items():
+                    axis.plot(
+                        thresholds,
+                        model_values[size][metric],
+                        ".-",
+                        linewidth=2,
+                        label=label,
+                    )
+                axis.set_title(f"{metric.replace('_', ' ').title()} ({size})")
+                axis.set_xlabel("IoU threshold")
+                axis.set_ylabel(metric.replace("_", " ").title())
+                axis.set_ylim(0, 1.05)
+                axis.grid(True)
+                axis.legend()
+        figure.suptitle(title)
+        figure.tight_layout()
+        figure.savefig(output_dir / filename, dpi=200)
+        plt.close(figure)
 
 
 def plot_bbox_diagnostics(
@@ -266,7 +271,7 @@ def plot_bbox_diagnostics(
     (output_dir / "greedy_bbox_metrics.json").write_text(
         json.dumps(report, indent=2) + "\n", encoding="utf-8"
     )
-    _plot(evaluated, thresholds, output_dir / "greedy_bbox_metrics.png")
+    _plot(evaluated, thresholds, output_dir)
     return report
 
 

@@ -322,8 +322,7 @@ The evaluator also writes three figures:
 ### 6. Plot supplementary bbox diagnostics by crater size
 
 After evaluation, use the same clipped COCO ground truth and one or more
-prediction files to create supplementary greedy precision, recall, F1, and
-detection-Jaccard curves for all objects and each project size:
+prediction files to create supplementary greedy precision, recall, and F1 curves for all objects and each project size:
 
 ```bash
 python -m tools.evaluation.plot_bbox_diagnostics \
@@ -340,7 +339,8 @@ JSON can be a Detectron2 `coco_instances_results.json` list or a COCO object
 containing an `annotations` list. The script uses score-ranked greedy bbox
 matching at IoU thresholds `0.1` through `0.9`, retains predictions of every
 size, and evaluates the project size categories by ground-truth bbox area. It
-writes `greedy_bbox_metrics.png` and `greedy_bbox_metrics.json`. Use
+writes `greedy_bbox_metrics_all.png`,
+`greedy_bbox_metrics_by_size.png`, and `greedy_bbox_metrics.json`. Use
 `--allow-legacy` only for files created before manifest metadata was added.
 
 ## Reported Result
