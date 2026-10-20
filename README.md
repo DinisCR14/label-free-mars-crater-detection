@@ -144,6 +144,29 @@ command with `--resume`; completed per-image checkpoints are skipped and only
 missing or invalid predictions are recomputed. The output and checkpoint
 directories should remain outside the repository.
 
+To collect several confidence thresholds without rerunning SAM 3, use sweep
+mode. SAM 3 is run once with postprocessing configured to retain all
+detections, then separate COCO files are written under the threshold output
+directory:
+
+```bash
+python -m crater_detection.sam3_label_generation \
+  --manifest /home/dcortereal/datasets/ground-truth/corrected-centerlat/corrected-centerlat-manifest.json \
+  --image-root /home/dcortereal/datasets/corrected-centerlat \
+  --threshold-output-dir /home/dcortereal/datasets/sam3-runs/corrected-centerlat-score-sweep \
+  --prediction-dir /home/dcortereal/datasets/sam3-runs/corrected-centerlat-score-sweep/all-scores_predictions \
+  --score-thresholds 0.2,0.3,0.4,0.5,0.6 \
+  --prompt crater \
+  --batch-size 4 \
+  --device cuda \
+  --resume
+```
+
+This creates `sam3-all-scores.json` plus
+`score-0p20/sam3-crater.json` through `score-0p60/sam3-crater.json`.
+The thresholded files contain identical image mappings and differ only in
+which annotations meet the requested score threshold.
+
 ### Grounding DINO-only batch inference
 
 For box-only Grounding DINO predictions without SAM mask generation, use
