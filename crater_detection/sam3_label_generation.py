@@ -88,6 +88,24 @@ def _write_json_atomic(path: Path, payload: dict) -> None:
     temporary_path.replace(path)
 
 
+def _thresholded_coco_document(
+    coco: dict,
+    score_threshold: float,
+) -> dict:
+    output = {
+        key: value
+        for key, value in coco.items()
+        if key not in {"annotations", "score_threshold"}
+    }
+    output["score_threshold"] = score_threshold
+    output["annotations"] = [
+        annotation
+        for annotation in coco["annotations"]
+        if annotation.get("score", 0.0) >= score_threshold
+    ]
+    return output
+
+
 def _load_prediction(
     path: Path,
     image_id: int,
@@ -362,14 +380,64 @@ def generate_coco_annotations(
     _write_json_atomic(output_json, coco)
 
 
+def generate_score_threshold_sweep(
+    image_paths: Iterable[str | Path],
+    output_dir: str | Path,
+    predictor: SAM3Predictor,
+    *,
+    prompt: str,
+    score_thresholds: Iterable[float],
+    batch_size: int = 4,
+    prediction_dir: str | Path | None = None,
+    resume: bool = False,
+    manifest: ImageManifest | None = None,
+) -> None:
+    """Run SAM 3 once and write one COCO document per score threshold."""
+    thresholds = sorted({float(value) for value in score_thresholds})
+    if not thresholds or any(not 0.0 <= value <= 1.0 for value in thresholds):
+        raise ValueError("score_thresholds must contain values between 0 and 1")
+
+    output_dir = Path(output_dir)
+    raw_output = output_dir / "sam3-all-scores.json"
+    generate_coco_annotations(
+        image_paths,
+        raw_output,
+        predictor,
+        prompt=prompt,
+        score_threshold=0.0,
+        batch_size=batch_size,
+        prediction_dir=prediction_dir or output_dir / "all-scores_predictions",
+        resume=resume,
+        manifest=manifest,
+    )
+    raw_coco = json.loads(raw_output.read_text(encoding="utf-8"))
+    for threshold in thresholds:
+        threshold_name = f"score-{threshold:.2f}".replace(".", "p")
+        threshold_output = output_dir / threshold_name / f"sam3-{prompt}.json"
+        _write_json_atomic(
+            threshold_output,
+            _thresholded_coco_document(raw_coco, threshold),
+        )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--image-root", type=Path, required=True)
-    parser.add_argument("--output-json", type=Path, required=True)
+    parser.add_argument("--output-json", type=Path)
     parser.add_argument("--prompt", default="circle")
     parser.add_argument("--detection-threshold", type=float, default=0.5)
     parser.add_argument("--score-threshold", type=float, default=0.0)
+    parser.add_argument(
+        "--score-thresholds",
+        type=str,
+        help="Comma-separated thresholds for a single-inference score sweep",
+    )
+    parser.add_argument(
+        "--threshold-output-dir",
+        type=Path,
+        help="Directory for score-sweep outputs",
+    )
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument("--bpe-path", type=Path)
     parser.add_argument("--prediction-dir", type=Path)
@@ -392,22 +460,45 @@ def main() -> None:
         parser.error("--detection-threshold must be between 0 and 1")
     if not 0.0 <= args.score_threshold <= 1.0:
         parser.error("--score-threshold must be between 0 and 1")
+    if not args.score_thresholds and args.output_json is None:
+        parser.error("--output-json is required unless --score-thresholds is used")
+    if args.score_thresholds and not args.threshold_output_dir:
+        parser.error("--threshold-output-dir is required with --score-thresholds")
+    if args.threshold_output_dir and not args.score_thresholds:
+        parser.error("--score-thresholds is required with --threshold-output-dir")
     predictor = SAM3Predictor(
         device=args.device,
         bpe_path=args.bpe_path,
-        detection_threshold=args.detection_threshold,
+        detection_threshold=0.0 if args.score_thresholds else args.detection_threshold,
     )
-    generate_coco_annotations(
-        image_paths,
-        args.output_json,
-        predictor,
-        prompt=args.prompt,
-        score_threshold=args.score_threshold,
-        batch_size=args.batch_size,
-        prediction_dir=args.prediction_dir,
-        resume=args.resume,
-        manifest=manifest,
-    )
+    if args.score_thresholds:
+        try:
+            thresholds = [float(value) for value in args.score_thresholds.split(",")]
+        except ValueError as error:
+            parser.error(f"invalid --score-thresholds: {error}")
+        generate_score_threshold_sweep(
+            image_paths,
+            args.threshold_output_dir,
+            predictor,
+            prompt=args.prompt,
+            score_thresholds=thresholds,
+            batch_size=args.batch_size,
+            prediction_dir=args.prediction_dir,
+            resume=args.resume,
+            manifest=manifest,
+        )
+    else:
+        generate_coco_annotations(
+            image_paths,
+            args.output_json,
+            predictor,
+            prompt=args.prompt,
+            score_threshold=args.score_threshold,
+            batch_size=args.batch_size,
+            prediction_dir=args.prediction_dir,
+            resume=args.resume,
+            manifest=manifest,
+        )
 
 
 if __name__ == "__main__":
