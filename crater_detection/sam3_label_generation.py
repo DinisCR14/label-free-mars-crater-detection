@@ -14,6 +14,8 @@ import numpy as np
 from PIL import Image
 from tqdm import tqdm
 
+from crater_detection.image_manifest import ImageManifest, ManifestImage
+
 
 def _read_image_list(image_list: Path, dataset_root: Path) -> list[Path]:
     paths = []
@@ -86,7 +88,12 @@ def _write_json_atomic(path: Path, payload: dict) -> None:
     temporary_path.replace(path)
 
 
-def _load_prediction(path: Path, image_id: int, file_name: str) -> dict | None:
+def _load_prediction(
+    path: Path,
+    image_id: int,
+    file_name: str,
+    manifest: ImageManifest | None = None,
+) -> dict | None:
     try:
         with path.open(encoding="utf-8") as handle:
             prediction = json.load(handle)
@@ -94,6 +101,8 @@ def _load_prediction(path: Path, image_id: int, file_name: str) -> dict | None:
         return None
     image = prediction.get("image", {})
     if image.get("id") != image_id or image.get("file_name") != file_name:
+        return None
+    if manifest is not None and prediction.get("mapping") != manifest.metadata():
         return None
     if not isinstance(prediction.get("annotations"), list):
         return None
@@ -246,6 +255,7 @@ def generate_coco_annotations(
     batch_size: int = 4,
     prediction_dir: str | Path | None = None,
     resume: bool = False,
+    manifest: ImageManifest | None = None,
 ) -> None:
     """Generate raw SAM 3 predictions with resumable per-image checkpoints."""
     from pycocotools import mask as mask_utils
@@ -253,6 +263,13 @@ def generate_coco_annotations(
     if batch_size < 1:
         raise ValueError("batch_size must be positive")
     image_paths = [Path(image_path) for image_path in image_paths]
+    records = (
+        list(manifest.images[: len(image_paths)])
+        if manifest is not None
+        else [ManifestImage(index, path.name, 0, 0) for index, path in enumerate(image_paths)]
+    )
+    if len(records) != len(image_paths):
+        raise ValueError("The image path list does not match the manifest")
     output_json = Path(output_json)
     if prediction_dir is None:
         prediction_dir = output_json.parent / f"{output_json.stem}_predictions"
@@ -264,9 +281,15 @@ def generate_coco_annotations(
         pending_paths = []
         pending_offsets = []
         for batch_offset, image_path in enumerate(batch_paths):
-            image_id = batch_start + batch_offset
+            image_id = records[batch_start + batch_offset].id
             checkpoint_path = prediction_dir / f"{image_id:08d}.json"
-            if resume and _load_prediction(checkpoint_path, image_id, image_path.name) is not None:
+            if (
+                resume
+                and _load_prediction(
+                    checkpoint_path, image_id, image_path.name, manifest
+                )
+                is not None
+            ):
                 continue
             pending_paths.append(image_path)
             pending_offsets.append(batch_offset)
@@ -275,7 +298,7 @@ def generate_coco_annotations(
         )
         for pending_offset, batch_offset in enumerate(pending_offsets):
             image_path = batch_paths[batch_offset]
-            image_id = batch_start + batch_offset
+            image_id = records[batch_start + batch_offset].id
             image = cv2.imread(str(image_path), cv2.IMREAD_COLOR)
             if image is None:
                 raise FileNotFoundError(f"Could not read image: {image_path}")
@@ -307,6 +330,7 @@ def generate_coco_annotations(
                         "width": width,
                         "height": height,
                     },
+                    "mapping": manifest.metadata() if manifest is not None else None,
                     "annotations": annotations,
                 },
             )
@@ -316,10 +340,16 @@ def generate_coco_annotations(
         "annotations": [],
         "categories": [{"id": 1, "name": "crater"}],
     }
+    if manifest is not None:
+        coco["mapping"] = manifest.metadata()
     annotation_id = 1
-    for image_id, image_path in enumerate(image_paths):
+    for record, image_path in zip(records, image_paths):
+        image_id = record.id
         prediction = _load_prediction(
-            prediction_dir / f"{image_id:08d}.json", image_id, image_path.name
+            prediction_dir / f"{image_id:08d}.json",
+            image_id,
+            image_path.name,
+            manifest,
         )
         if prediction is None:
             raise RuntimeError(f"Missing or invalid prediction checkpoint for {image_path}")
@@ -334,10 +364,8 @@ def generate_coco_annotations(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--dataset-root", type=Path, default=Path("."))
-    image_source = parser.add_mutually_exclusive_group(required=True)
-    image_source.add_argument("--image-list", type=Path)
-    image_source.add_argument("--image-root", type=Path)
+    parser.add_argument("--manifest", type=Path, required=True)
+    parser.add_argument("--image-root", type=Path, required=True)
     parser.add_argument("--output-json", type=Path, required=True)
     parser.add_argument("--prompt", default="circle")
     parser.add_argument("--detection-threshold", type=float, default=0.5)
@@ -355,14 +383,11 @@ def main() -> None:
     if args.batch_size < 1:
         parser.error("--batch-size must be positive")
 
-    if args.image_list is not None:
-        image_paths = _read_image_list(args.image_list, args.dataset_root.resolve())
-    else:
-        image_paths = _discover_images(args.image_root.resolve())
-    if not image_paths:
-        parser.error("no corrected images found")
-    if args.limit is not None:
-        image_paths = image_paths[:args.limit]
+    try:
+        manifest = ImageManifest.load(args.manifest)
+        image_paths = manifest.resolve(args.image_root.resolve(), limit=args.limit)
+    except (FileNotFoundError, ValueError) as error:
+        parser.error(str(error))
     if not 0.0 <= args.detection_threshold <= 1.0:
         parser.error("--detection-threshold must be between 0 and 1")
     if not 0.0 <= args.score_threshold <= 1.0:
@@ -381,6 +406,7 @@ def main() -> None:
         batch_size=args.batch_size,
         prediction_dir=args.prediction_dir,
         resume=args.resume,
+        manifest=manifest,
     )
 
 

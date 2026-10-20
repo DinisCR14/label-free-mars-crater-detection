@@ -124,10 +124,11 @@ The repository also includes an experimental SAM 3 batch runner in
 `crater_detection/sam3_label_generation.py`. Install the official SAM 3 package
 in the active environment according to its release instructions, then run a
 small subset before launching the full corrected dataset. The runner can
-discover corrected tiles directly:
+consume the canonical image manifest:
 
 ```bash
-python crater_detection/sam3_label_generation.py \
+python -m crater_detection.sam3_label_generation \
+  --manifest /home/dcortereal/datasets/ground-truth/corrected-centerlat/corrected-centerlat-manifest.json \
   --image-root /home/dcortereal/datasets/corrected-centerlat \
   --output-json /home/dcortereal/datasets/sam3-runs/corrected-centerlat.json \
   --prediction-dir /home/dcortereal/datasets/sam3-runs/corrected-centerlat-predictions \
@@ -149,7 +150,8 @@ For box-only Grounding DINO predictions without SAM mask generation, use
 `crater_detection/grounding_dino_label_generation.py`:
 
 ```bash
-python crater_detection/grounding_dino_label_generation.py \
+python -m crater_detection.grounding_dino_label_generation \
+  --manifest /home/dcortereal/datasets/ground-truth/corrected-centerlat/corrected-centerlat-manifest.json \
   --image-root /home/dcortereal/datasets/corrected-centerlat \
   --output-json /home/dcortereal/datasets/dino-runs/full-corrected-centerlat/dino-circle.json \
   --prediction-dir /home/dcortereal/datasets/dino-runs/full-corrected-centerlat/predictions \
@@ -161,16 +163,37 @@ python crater_detection/grounding_dino_label_generation.py \
   --resume
 ```
 
-The runner discovers `*_corrected.png` files, writes bbox-only COCO predictions,
-and checkpoints each image atomically so interrupted runs can resume.
+The runner validates the corrected image root against the manifest, writes
+bbox-only COCO predictions, and checkpoints each image atomically so interrupted
+runs can resume.
+
+### Grounded SAM batch inference
+
+For the combined Grounding DINO and Segment Anything model, use
+`crater_detection/grounded_sam_label_generation.py`:
+
+```bash
+python -m crater_detection.grounded_sam_label_generation \
+  --manifest /home/dcortereal/datasets/ground-truth/corrected-centerlat/corrected-centerlat-manifest.json \
+  --image-root /home/dcortereal/datasets/corrected-centerlat \
+  --output-json /home/dcortereal/datasets/grounded-sam-runs/corrected-centerlat.json \
+  --prediction-dir /home/dcortereal/datasets/grounded-sam-runs/corrected-centerlat-predictions \
+  --sam-checkpoint /models/sam_vit_h_4b8939.pth \
+  --device cuda \
+  --resume
+```
+
+All three foundation-model runners use explicit manifest image IDs and include
+the manifest fingerprint in checkpoints and final COCO output. Changed,
+missing, extra, or dimension-mismatched images are rejected before inference.
 
 ### Prediction image mapping invariant
 
 All prediction files that will be compared against one ground-truth file must
-use the same `(image_id, file_name)` mapping. The current SAM 3 and Grounding
-DINO runners achieve this by discovering the same `*_corrected.png` files and
-assigning IDs from the same sorted order; this mapping has been verified to be
-identical for the full corrected-centerlat runs.
+use the same `(image_id, file_name)` mapping. The canonical corrected-centerlat
+manifest owns that mapping; runners must consume it rather than independently
+assigning IDs from directory ordering. The manifest fingerprint is stored in
+each checkpoint and final prediction file.
 
 The shared corrected-centerlat evaluation ground truth is kept independently of
 any detector run under

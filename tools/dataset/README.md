@@ -2,6 +2,34 @@
 
 The detector pipeline consumes an external prepared dataset; it does not require the raw-data download step at runtime.
 
+## Canonical inference image manifest
+
+Foundation-model inference and evaluation use an explicit image-to-ID
+manifest. Build it once from the centralized corrected ground truth:
+
+```bash
+python tools/dataset/build_image_manifest.py \
+  /home/dcortereal/datasets/ground-truth/corrected-centerlat/corrected-centerlat-clipped.json \
+  /home/dcortereal/datasets/ground-truth/corrected-centerlat/corrected-centerlat-manifest.json
+```
+
+The manifest is external to the repository and owns the stable
+`(id, file_name, width, height)` mapping. SAM 3, Grounding DINO, and Grounded
+SAM must all receive it through `--manifest`. The runners reject missing or
+extra corrected images, dimension mismatches, and stale prediction
+checkpoints.
+
+Validate an output before evaluation:
+
+```bash
+python tools/dataset/validate_image_mapping.py \
+  /home/dcortereal/datasets/ground-truth/corrected-centerlat/corrected-centerlat-manifest.json \
+  /home/dcortereal/datasets/sam3-runs/corrected-centerlat.json
+```
+
+Use `--allow-legacy` only for existing outputs created before manifest
+metadata was added; image records are still checked exactly.
+
 ## Data sources
 
 THEMIS imagery is publicly available through the [THEMIS Image Explorer](http://viewer.mars.asu.edu/faq) and NASA's [Planetary Data System](http://pds-imaging.jpl.nasa.gov/). The crater metadata used by the historical preparation scripts came from the referenced Mars crater study dataset. Download and store those external assets outside this repository.
