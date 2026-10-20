@@ -189,6 +189,8 @@ def convert_ellipse_labels_with_metadata(
         "annotations": annotations,
         "categories": copy.deepcopy(COCO_CATEGORIES),
     }
+    if isinstance(metadata.get("mapping"), dict):
+        output["mapping"] = copy.deepcopy(metadata["mapping"])
     output_json.parent.mkdir(parents=True, exist_ok=True)
     with output_json.open("w", encoding="utf-8") as handle:
         json.dump(output, handle)

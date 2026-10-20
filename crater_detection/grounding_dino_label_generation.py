@@ -13,6 +13,8 @@ from typing import Any, Iterable
 from PIL import Image
 from tqdm import tqdm
 
+from crater_detection.image_manifest import ImageManifest, ManifestImage
+
 
 DEFAULT_MODEL_ID = "IDEA-Research/grounding-dino-base"
 DEFAULT_PROMPT = "circle."
@@ -55,7 +57,12 @@ def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
             temporary_path.unlink()
 
 
-def _load_prediction(path: Path, image_id: int, file_name: str) -> dict[str, Any] | None:
+def _load_prediction(
+    path: Path,
+    image_id: int,
+    file_name: str,
+    manifest: ImageManifest | None = None,
+) -> dict[str, Any] | None:
     if not path.is_file():
         return None
     try:
@@ -64,6 +71,8 @@ def _load_prediction(path: Path, image_id: int, file_name: str) -> dict[str, Any
         return None
     image = prediction.get("image", {})
     if image.get("id") != image_id or image.get("file_name") != file_name:
+        return None
+    if manifest is not None and prediction.get("mapping") != manifest.metadata():
         return None
     return prediction
 
@@ -158,9 +167,17 @@ def generate_coco_annotations(
     prediction_dir: str | Path | None = None,
     resume: bool = False,
     batch_size: int = 1,
+    manifest: ImageManifest | None = None,
 ) -> None:
     """Generate resumable bbox-only COCO annotations."""
     image_paths = [Path(image_path) for image_path in image_paths]
+    records = (
+        list(manifest.images[: len(image_paths)])
+        if manifest is not None
+        else [ManifestImage(index, path.name, 0, 0) for index, path in enumerate(image_paths)]
+    )
+    if len(records) != len(image_paths):
+        raise ValueError("The image path list does not match the manifest")
     output_json = Path(output_json)
     prediction_dir = Path(prediction_dir or output_json.parent / f"{output_json.stem}_predictions")
     prediction_dir.mkdir(parents=True, exist_ok=True)
@@ -170,9 +187,15 @@ def generate_coco_annotations(
     for batch_start in tqdm(range(0, len(image_paths), batch_size), desc="Grounding DINO"):
         batch_paths = image_paths[batch_start : batch_start + batch_size]
         for batch_offset, image_path in enumerate(batch_paths):
-            image_id = batch_start + batch_offset
+            image_id = records[batch_start + batch_offset].id
             checkpoint_path = prediction_dir / f"{image_id:08d}.json"
-            if resume and _load_prediction(checkpoint_path, image_id, image_path.name) is not None:
+            if (
+                resume
+                and _load_prediction(
+                    checkpoint_path, image_id, image_path.name, manifest
+                )
+                is not None
+            ):
                 continue
             with Image.open(image_path) as image:
                 width, height = image.size
@@ -187,6 +210,7 @@ def generate_coco_annotations(
                         "width": width,
                         "height": height,
                     },
+                    "mapping": manifest.metadata() if manifest is not None else None,
                     "annotations": annotations,
                 },
             )
@@ -196,12 +220,16 @@ def generate_coco_annotations(
         "annotations": [],
         "categories": [{"id": 1, "name": "crater"}],
     }
+    if manifest is not None:
+        coco["mapping"] = manifest.metadata()
     annotation_id = 1
-    for image_id, image_path in enumerate(image_paths):
+    for record, image_path in zip(records, image_paths):
+        image_id = record.id
         prediction = _load_prediction(
             prediction_dir / f"{image_id:08d}.json",
             image_id,
             image_path.name,
+            manifest,
         )
         if prediction is None:
             raise RuntimeError(f"Missing or invalid prediction checkpoint for {image_path}")
@@ -215,10 +243,8 @@ def generate_coco_annotations(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    input_group = parser.add_mutually_exclusive_group(required=True)
-    input_group.add_argument("--image-list", type=Path)
-    input_group.add_argument("--image-root", type=Path)
-    parser.add_argument("--dataset-root", type=Path, default=Path("."))
+    parser.add_argument("--manifest", type=Path, required=True)
+    parser.add_argument("--image-root", type=Path, required=True)
     parser.add_argument("--output-json", type=Path, required=True)
     parser.add_argument("--prediction-dir", type=Path)
     parser.add_argument("--model-id", default=DEFAULT_MODEL_ID)
@@ -239,14 +265,11 @@ def main() -> None:
     if args.limit is not None and args.limit < 1:
         parser.error("--limit must be positive")
 
-    if args.image_list is not None:
-        image_paths = _read_image_list(args.image_list, args.dataset_root.resolve())
-    else:
-        image_paths = _discover_images(args.image_root.resolve())
-    if not image_paths:
-        parser.error("no corrected images found")
-    if args.limit is not None:
-        image_paths = image_paths[:args.limit]
+    try:
+        manifest = ImageManifest.load(args.manifest)
+        image_paths = manifest.resolve(args.image_root.resolve(), limit=args.limit)
+    except (FileNotFoundError, ValueError) as error:
+        parser.error(str(error))
 
     predictor = GroundingDINO(
         args.model_id,
@@ -262,6 +285,7 @@ def main() -> None:
         prediction_dir=args.prediction_dir,
         resume=args.resume,
         batch_size=args.batch_size,
+        manifest=manifest,
     )
 
 
