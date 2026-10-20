@@ -283,19 +283,65 @@ python third_party/CutLER/cutler/train_net.py \
 
 This writes the scored detector predictions to `/data/mars-runs/evaluation/inference/coco_instances_results.json`.
 
-### 5. Plot bbox metrics by crater size
+### 5. Evaluate bbox predictions
 
-After evaluation, use the COCO ground truth and one or more `coco_instances_results.json` files to create the aggregate 2x2 and size-stratified 3x4 figures:
+Use the standard COCO bbox evaluator for primary detector results. It validates
+the canonical image mapping and reports both the standard COCO AP/AR
+size ranges and a second set using the project's crater-size thresholds:
+
+```text
+small:  bbox area < pi*5^2
+medium: pi*5^2 <= bbox area < pi*20^2
+large:  bbox area >= pi*20^2
+```
+
+The custom ranges use bbox area for both ground truth and detections, so their
+size assignment is independent of model-specific `area` fields:
 
 ```bash
-python crater_detection/plot_bbox_metrics.py \
+python -m tools.evaluation.evaluate_coco_bbox \
+  --manifest /home/dcortereal/datasets/ground-truth/corrected-centerlat/corrected-centerlat-manifest.json \
+  --ground-truth /home/dcortereal/datasets/ground-truth/corrected-centerlat/corrected-centerlat-clipped.json \
+  --model sam3=/home/dcortereal/datasets/sam3-runs/full-corrected-centerlat/sam3-circle-threshold-04.json \
+  --model gdino=/home/dcortereal/datasets/dino-runs/full-corrected-centerlat/dino-circle.json \
+  --output-dir /home/dcortereal/datasets/evaluation/corrected-centerlat \
+  --allow-legacy
+```
+
+Use `--allow-legacy` only for outputs created before manifest metadata was
+added. New manifest-aware outputs should be evaluated without it. The report is written to `coco_bbox_metrics.json`. Each model contains
+`standard_coco` and `custom_bbox_area` metric groups.
+
+The evaluator also writes three figures:
+
+- `coco_precision_recall.png` — precision-recall curves by project size;
+- `coco_ap_vs_iou.png` — AP as the IoU threshold increases;
+- `coco_ap_by_size.png` — grouped AP comparison using standard COCO and
+  project-specific size ranges.
+
+### 6. Plot supplementary bbox diagnostics by crater size
+
+After evaluation, use the same clipped COCO ground truth and one or more
+prediction files to create supplementary greedy precision, recall, F1, and
+detection-Jaccard curves for all objects and each project size:
+
+```bash
+python -m tools.evaluation.plot_bbox_diagnostics \
+  --manifest /home/dcortereal/datasets/ground-truth/corrected-centerlat/corrected-centerlat-manifest.json \
   --ground-truth /data/mars/annotations/test_truegt_clipped.json \
   --model Label-Free=/data/mars-runs/evaluation/inference/coco_instances_results.json \
   --model Supervised=/data/mars-runs/supervised/evaluation/inference/coco_instances_results.json \
-  --output-dir /data/mars-runs/plots
+  --output-dir /data/mars-runs/plots \
+  --allow-legacy
 ```
 
-Repeat `--model LABEL=JSON` for every scored model you want to compare. The JSON can be a Detectron2 `coco_instances_results.json` list or a COCO object containing an `annotations` list. The script uses bbox-only IoU matching at thresholds `0.1` through `0.9`, COCO-style confidence ordering, a maximum of 100 detections per image, and the crater area boundaries used by the evaluator: `pi*5^2` and `pi*20^2`. It writes `bbox_metrics_all.png`, `bbox_metrics_by_size.png`, and the underlying `bbox_metrics.json`.
+Repeat `--model LABEL=JSON` for every scored model you want to compare. The
+JSON can be a Detectron2 `coco_instances_results.json` list or a COCO object
+containing an `annotations` list. The script uses score-ranked greedy bbox
+matching at IoU thresholds `0.1` through `0.9`, retains predictions of every
+size, and evaluates the project size categories by ground-truth bbox area. It
+writes `greedy_bbox_metrics.png` and `greedy_bbox_metrics.json`. Use
+`--allow-legacy` only for files created before manifest metadata was added.
 
 ## Reported Result
 

@@ -19,6 +19,17 @@ SAM must all receive it through `--manifest`. The runners reject missing or
 extra corrected images, dimension mismatches, and stale prediction
 checkpoints.
 
+The primary bbox evaluation is implemented in
+`tools/evaluation/evaluate_coco_bbox.py`. It uses `pycocotools.COCOeval`,
+requires the clipped ground truth for image-bounded detector evaluation, and
+reports standard AP/AR metrics plus the project's custom bbox-area size
+categories (`pi*5^2` and `pi*20^2`). The older
+`crater_detection/plot_bbox_metrics.py` script remains a supplementary custom
+greedy-matching diagnostic and is not the authoritative evaluator. The
+diagnostic implementation is now
+`tools/evaluation/plot_bbox_diagnostics.py`; the old path remains a
+compatibility wrapper.
+
 Validate an output before evaluation:
 
 ```bash
