@@ -8,6 +8,10 @@ This project investigates crater detection in Martian THEMIS imagery without usi
 
 The repository is intended to support reproducible research experiments. Datasets, model checkpoints, and generated outputs are external artifacts and are not distributed here.
 
+## Paper
+
+This work was presented at **IGARSS 2026**. The paper is available in the repository as [IGARSS26_Paper.pdf](docs/IGARSS26_Paper.pdf).
+
 ## Method Overview
 
 ```text
@@ -35,6 +39,7 @@ crater_detection/       Core label-generation and annotation utilities
 scripts/                 End-to-end and stage-specific workflow commands
 tools/dataset/           THEMIS sources and prepared-dataset documentation
 third_party/CutLER/      Vendored thesis-specific CutLER/Detectron2 source
+docs/IGARSS26_Paper.pdf PDF of the associated IGARSS 2026 paper
 docs/citation.bib       BibTeX citation for the associated paper
 ```
 
@@ -216,7 +221,7 @@ Dataset registration is configured through the environment variables set by `scr
 
 ## Citation
 
-If you use this software, please cite the associated IGARSS 2026 paper. The paper is marked forthcoming until publication after the conference presentation. GitHub citation metadata is available in [CITATION.cff](CITATION.cff), and a BibTeX entry is available in [docs/citation.bib](docs/citation.bib).
+If you use this software, please cite the associated IGARSS 2026 paper. The paper was presented at IGARSS 2026; its PDF is available in [docs/IGARSS26_Paper.pdf](docs/IGARSS26_Paper.pdf). GitHub citation metadata is available in [CITATION.cff](CITATION.cff), and a BibTeX entry is available in [docs/citation.bib](docs/citation.bib).
 
 ## License and Acknowledgments
 
