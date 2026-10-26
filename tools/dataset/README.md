@@ -292,7 +292,10 @@ python tools/dataset/render_coco_prediction_overlays.py \
     --score-threshold 0.4
 ```
 
-Use `--limit 8` for a quick sample, `--target IMAGE_NAME` to select specific images, and `--max-detections 100` to cap detections per image.
+Use `--limit 8` for a deterministic evenly spaced sample across the manifest (rather
+than the first eight lexicographically ordered images), `--target IMAGE_NAME` to
+select specific images, `--max-detections 100` to cap detections per image, and
+`--mask-opacity 60` to make the masks more transparent.
 
 ## Evaluate the final detector
 

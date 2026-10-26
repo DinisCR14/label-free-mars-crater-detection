@@ -42,14 +42,16 @@ def _decode_segmentation(segmentation: Any, size: tuple[int, int]) -> Image.Imag
 def _render_image(
     image: Image.Image,
     annotations: list[dict[str, Any]],
+    mask_opacity: int = MASK_COLOR[3],
 ) -> Image.Image:
     output = image.convert("RGBA")
     for annotation in annotations:
         segmentation = annotation.get("segmentation")
         if segmentation:
             mask = _decode_segmentation(segmentation, output.size)
-            color = Image.new("RGBA", output.size, MASK_COLOR)
-            output = Image.composite(color, output, mask)
+            color = Image.new("RGBA", output.size, MASK_COLOR[:3] + (mask_opacity,))
+            color.putalpha(mask.point(lambda value: value * mask_opacity // 255))
+            output = Image.alpha_composite(output, color)
 
     draw = ImageDraw.Draw(output)
     for annotation in annotations:
@@ -78,6 +80,7 @@ def render_prediction_overlays(
     max_detections: int | None = None,
     limit: int | None = None,
     targets: set[str] | None = None,
+    mask_opacity: int = MASK_COLOR[3],
 ) -> int:
     """Render selected COCO predictions and return the number of images written."""
     predictions = json.loads(Path(predictions_json).read_text(encoding="utf-8"))
@@ -96,8 +99,12 @@ def render_prediction_overlays(
         if targets and file_name not in targets and stem not in targets and str(image["id"]) not in targets:
             continue
         selected_images.append(image)
-    if limit is not None:
-        selected_images = selected_images[:limit]
+    if limit is not None and len(selected_images) > limit:
+        if limit == 1:
+            selected_images = [selected_images[len(selected_images) // 2]]
+        else:
+            indices = [index * (len(selected_images) - 1) // (limit - 1) for index in range(limit)]
+            selected_images = [selected_images[index] for index in indices]
 
     written = 0
     for image in tqdm(selected_images, desc="Prediction overlays"):
@@ -113,7 +120,7 @@ def render_prediction_overlays(
         if not image_path.is_file():
             raise FileNotFoundError(f"Could not read image: {image_path}")
         with Image.open(image_path) as source:
-            rendered = _render_image(source, annotations)
+            rendered = _render_image(source, annotations, mask_opacity)
         output_path = _output_path(output_root, str(image["file_name"]))
         output_path.parent.mkdir(parents=True, exist_ok=True)
         rendered.save(output_path)
@@ -129,6 +136,12 @@ def main() -> None:
     parser.add_argument("--score-threshold", type=float, default=0.0)
     parser.add_argument("--max-detections", type=int)
     parser.add_argument("--limit", type=int)
+    parser.add_argument(
+        "--mask-opacity",
+        type=int,
+        default=MASK_COLOR[3],
+        help="Mask opacity from 0 (transparent) to 255 (opaque); default: %(default)s",
+    )
     parser.add_argument("--target", action="append", default=[])
     args = parser.parse_args()
     if not 0.0 <= args.score_threshold <= 1.0:
@@ -137,6 +150,8 @@ def main() -> None:
         parser.error("--max-detections must be positive")
     if args.limit is not None and args.limit < 1:
         parser.error("--limit must be positive")
+    if not 0 <= args.mask_opacity <= 255:
+        parser.error("--mask-opacity must be between 0 and 255")
     written = render_prediction_overlays(
         args.predictions,
         args.image_root,
@@ -145,6 +160,7 @@ def main() -> None:
         max_detections=args.max_detections,
         limit=args.limit,
         targets=set(args.target),
+        mask_opacity=args.mask_opacity,
     )
     print(f"Rendered {written} image overlay(s) to {args.output}")
 
