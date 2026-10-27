@@ -41,6 +41,30 @@ python tools/dataset/validate_image_mapping.py \
 Use `--allow-legacy` only for existing outputs created before manifest
 metadata was added; image records are still checked exactly.
 
+### Preparing detector training data
+
+The high-level label orchestrator supports `grounded-sam` and `sam3`, or can
+reuse an existing mask-producing COCO file with `--existing-predictions`.
+After common geometric refinement and FBWR filtering, prepare the split layout
+for CutLER with:
+
+```bash
+python tools/dataset/prepare_training_dataset.py \
+    --manifest /home/dcortereal/datasets/ground-truth/corrected-centerlat/corrected-centerlat-manifest.json \
+    --image-root /home/dcortereal/datasets/corrected-centerlat \
+    --pseudo-labels /data/mars-runs/labels/fbwr_filtered.json \
+    --ground-truth /home/dcortereal/datasets/ground-truth/corrected-centerlat/corrected-centerlat-clipped.json \
+    --output-root /data/mars-runs/detector-dataset \
+    --seed 0 \
+    --link-mode symlink
+```
+
+The tool creates deterministic `train/`, `val/`, and `test/` image
+directories, `annotations/train_initial.json` from pseudo-labels, and
+`annotations/val_truegt.json` plus `annotations/test_truegt_clipped.json`
+from the centralized reference annotations. Symlinks are used by default so
+the corrected source imagery is not copied or modified.
+
 ## Data sources
 
 THEMIS imagery is publicly available through the [THEMIS Image Explorer](http://viewer.mars.asu.edu/faq) and NASA's [Planetary Data System](http://pds-imaging.jpl.nasa.gov/). The crater metadata used by the historical preparation scripts came from the referenced Mars crater study dataset. Download and store those external assets outside this repository.

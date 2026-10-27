@@ -234,51 +234,89 @@ retain the raw file for provenance and geometry audits.
 
 ## Step-by-Step Usage
 
-### 1. Generate pseudo-labels
+### 1. Generate or process pseudo-labels
 
-Run Grounded DINO/SAM, geometric and boundary refinement, and FBWR filtering as one stage:
+The label-generation orchestrator supports the mask-producing backends
+Grounded SAM and SAM 3. It runs the selected backend and then applies the same
+geometric refinement and FBWR filtering stages:
 
 ```bash
 python scripts/run_label_generation.py \
-  --dataset-root /data/mars \
-  --image-root /data/mars/train \
-  --image-list /data/mars/image-list.txt \
-  --sam-checkpoint /models/sam_vit_h_4b8939.pth \
-  --output-dir /data/mars-runs/labels
+  --model sam3 \
+  --manifest /home/dcortereal/datasets/ground-truth/corrected-centerlat/corrected-centerlat-manifest.json \
+  --image-root /home/dcortereal/datasets/corrected-centerlat \
+  --output-dir /home/dcortereal/datasets/sam3-runs/processed-threshold-04 \
+  --existing-predictions /home/dcortereal/datasets/sam3-runs/full-corrected-centerlat/sam3-circle-threshold-04.json \
+  --prompt circle \
+  --device cuda \
+  --allow-legacy
 ```
 
-The output directory contains `grounded_sam.json`, `refined.json`, and `fbwr_filtered.json`. The last file is the initial COCO annotation input for detector training.
+With `--existing-predictions`, no foundation model is loaded. The file is
+validated, copied to `raw/predictions.json`, and processed into
+`refined.json` and `fbwr_filtered.json`. For new inference, omit
+`--existing-predictions` and provide the model-specific checkpoint/options.
+Grounding DINO remains a separate box-only runner because the common
+post-processing requires masks.
 
-### 2. Run detector training and self-training
+### 2. Prepare the detector dataset
 
-The training runner launches initial training, inference and annotation merging for three rounds, and final standard-loss training:
+After selecting the pseudo-label file, create the deterministic CutLER dataset
+layout:
+
+```bash
+python tools/dataset/prepare_training_dataset.py \
+  --manifest /home/dcortereal/datasets/ground-truth/corrected-centerlat/corrected-centerlat-manifest.json \
+  --image-root /home/dcortereal/datasets/corrected-centerlat \
+  --pseudo-labels /home/dcortereal/datasets/sam3-runs/processed-threshold-04/fbwr_filtered.json \
+  --ground-truth /home/dcortereal/datasets/ground-truth/corrected-centerlat/corrected-centerlat-clipped.json \
+  --output-root /home/dcortereal/datasets/sam3-training-threshold-04 \
+  --seed 0 \
+  --link-mode symlink
+```
+
+This creates `train/`, `val/`, `test/`, `annotations/`, and
+`split-manifest.json`. The pseudo-labels are used only for
+`annotations/train_initial.json`; validation and test annotations come from
+the centralized reference ground truth.
+
+### 3. Run detector training and self-training
+
+The training runner launches initial training, inference and annotation
+merging for three rounds, and final standard-loss training:
 
 ```bash
 python scripts/run_training_pipeline.py \
-  --dataset-root /data/mars \
-  --initial-annotations /data/mars-runs/labels/fbwr_filtered.json \
+  --dataset-root /home/dcortereal/datasets/sam3-training-threshold-04 \
+  --initial-annotations /home/dcortereal/datasets/sam3-training-threshold-04/annotations/train_initial.json \
   --initial-weights /models/dino_RN50_pretrain_d2_format.pkl \
-  --annotations-dir /data/mars-runs/annotations \
-  --output-root /data/mars-runs/training \
-  --standard-loss-config third_party/CutLER/cutler/model_zoo/configs/CutLER-CraterDataset/cascade_mask_rcnn_R_50_FPN_final.yaml
+  --annotations-dir /home/dcortereal/datasets/sam3-training-threshold-04/annotations \
+  --output-root /home/dcortereal/datasets/sam3-training-threshold-04/training \
+  --standard-loss-config third_party/CutLER/cutler/model_zoo/configs/CutLER-CraterDataset/cascade_mask_rcnn_R_50_FPN_final.yaml \
+  --python-executable .venv/bin/python
 ```
 
-### 3. Run the complete workflow
+### 4. Run the complete workflow
 
-The combined command performs both stages and preserves all intermediate labels and model outputs:
+The combined command performs inference or existing-prediction processing,
+dataset preparation, initial training, three self-training rounds, and final
+standard-loss training:
 
 ```bash
 python scripts/run_full_pipeline.py \
-  --dataset-root /data/mars \
-  --image-root /data/mars/train \
-  --image-list /data/mars/image-list.txt \
-  --sam-checkpoint /models/sam_vit_h_4b8939.pth \
+  --model sam3 \
+  --manifest /home/dcortereal/datasets/ground-truth/corrected-centerlat/corrected-centerlat-manifest.json \
+  --image-root /home/dcortereal/datasets/corrected-centerlat \
+  --ground-truth /home/dcortereal/datasets/ground-truth/corrected-centerlat/corrected-centerlat-clipped.json \
+  --existing-predictions /home/dcortereal/datasets/sam3-runs/full-corrected-centerlat/sam3-circle-threshold-04.json \
   --initial-weights /models/dino_RN50_pretrain_d2_format.pkl \
-  --output-root /data/mars-runs \
-  --annotations-dir /data/mars-runs/annotations
+  --output-root /home/dcortereal/datasets/sam3-training-threshold-04 \
+  --python-executable .venv/bin/python \
+  --allow-legacy
 ```
 
-Add `--dry-run` to any workflow command to inspect the generated commands without loading models or starting training.
+Add `--dry-run` to inspect the generated commands without loading models or
+starting training.
 
 ### 4. Evaluate the final detector
 
