@@ -114,7 +114,7 @@ class LabelGenerationPipeline:
         filtered_json = self.output_dir / "fbwr_filtered.json"
         self._run([
             self.args.python_executable,
-            str(self.repo_root / "crater_detection" / "geometric_boundary_refinement.py"),
+            str(self.repo_root / "crater_detection" / "geometric_refinement.py"),
             str(self.raw_json),
             str(refined_json),
         ])

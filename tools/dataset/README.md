@@ -45,7 +45,7 @@ metadata was added; image records are still checked exactly.
 
 The high-level label orchestrator supports `grounded-sam` and `sam3`, or can
 reuse an existing mask-producing COCO file with `--existing-predictions`.
-After common geometric refinement and FBWR filtering, prepare the split layout
+After common geometric refinement and FBWR processing, prepare the split layout
 for CutLER with:
 
 ```bash

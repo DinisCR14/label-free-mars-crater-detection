@@ -13,7 +13,7 @@ The repository is intended to support reproducible research experiments. Dataset
 ```text
 THEMIS imagery
     -> Grounded DINO + Segment Anything pseudo-labels
-    -> geometric and boundary refinement
+    -> geometric refinement
     -> FBWR filtering
     -> initial Cascade Mask R-CNN training
     -> three self-training rounds
