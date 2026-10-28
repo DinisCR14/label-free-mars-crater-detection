@@ -28,6 +28,11 @@ The experiments use the global THEMIS daytime infrared mosaic. Non-overlapping $
 
 The reported Grounded DINO/SAM settings are the `circle` text prompt, box threshold `0.30`, and text threshold `0.25`. Geometric refinement retains ellipse axis ratios in `[0.7, 1.3]`. Initial FBWR filtering uses threshold `2000` on 8-bit imagery; the normalized detector-side FBWR threshold is `0.03`.
 
+The two FBWR thresholds are intentional: pseudo-label filtering operates on
+8-bit grayscale images, while the detector training loss operates on grayscale
+tensors normalized to `[0, 1]`. See [docs/fbwr.md](docs/fbwr.md) for the score
+units, optimization, and remaining validation work.
+
 ## Repository Structure
 
 ```text

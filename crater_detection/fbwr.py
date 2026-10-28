@@ -33,30 +33,20 @@ def _gradient_magnitude(image: np.ndarray) -> np.ndarray:
     return np.hypot(grad_x, grad_y)
 
 
-def fbwr_score(
-    image: np.ndarray,
-    box: Sequence[float],
-    *,
-    config: FBWRConfig = FBWRConfig(),
-) -> float:
-    """Compute the flexible radial FBWR score for one grayscale image and xyxy box.
-
-    Image values are not rescaled. Consequently, an 8-bit image produces scores
-    on the raw intensity scale, while a [0, 1] image produces normalized scores.
-    Sample pairs are ignored when either endpoint is outside the image.
-    """
-    image = np.asarray(image)
-    if image.ndim != 2:
-        raise ValueError("image must be a two-dimensional grayscale array")
-    if image.size == 0:
-        return 0.0
+def _validate_config(config: FBWRConfig) -> None:
     if config.num_angles <= 0 or config.rim_margin < 0:
         raise ValueError("num_angles must be positive and rim_margin non-negative")
 
+
+def _fbwr_score_from_gradients(
+    image: np.ndarray,
+    gradients: np.ndarray,
+    box: Sequence[float],
+    *,
+    config: FBWRConfig,
+) -> tuple[float, int, int]:
     x1, y1, x2, y2 = _validate_box(box)
     height, width = image.shape
-    gradients = _gradient_magnitude(image)
-
     box_width = x2 - x1
     box_height = y2 - y1
     half_size = min(box_width, box_height) / 2.0
@@ -67,6 +57,12 @@ def fbwr_score(
     radius_max = half_size + config.rim_margin
     radii = range(int(np.floor(radius_min)), int(np.ceil(radius_max)) + 1)
     angles = np.arange(config.num_angles, dtype=np.float32) * np.pi / config.num_angles
+    total_samples = (
+        (int(np.ceil(center_radius)) - int(np.floor(-center_radius)) + 1)
+        * (int(np.ceil(center_radius)) - int(np.floor(-center_radius)) + 1)
+        * len(radii)
+        * len(angles)
+    )
 
     scores: list[float] = []
     for offset_y in range(int(np.floor(-center_radius)), int(np.ceil(center_radius)) + 1):
@@ -89,12 +85,60 @@ def fbwr_score(
                     mean_gradient = (float(gradients[ay, ax]) + float(gradients[by, bx])) / 2.0
                     scores.append(contrast * mean_gradient)
 
-    return float(np.mean(scores)) if scores else 0.0
+    return float(np.mean(scores)) if scores else 0.0, len(scores), total_samples
+
+
+def _score_sample_fraction(valid_samples: int, total_samples: int) -> float:
+    return valid_samples / total_samples if total_samples else 0.0
+
+
+def fbwr_score(
+    image: np.ndarray,
+    box: Sequence[float],
+    *,
+    config: FBWRConfig = FBWRConfig(),
+    gradients: np.ndarray | None = None,
+) -> float:
+    """Compute the flexible radial FBWR score for one grayscale image and xyxy box.
+
+    Image values are not rescaled. Consequently, an 8-bit image produces scores
+    on the raw intensity scale, while a [0, 1] image produces normalized scores.
+    Sample pairs are ignored when either endpoint is outside the image.
+    """
+    image = np.asarray(image)
+    if image.ndim != 2:
+        raise ValueError("image must be a two-dimensional grayscale array")
+    if image.size == 0:
+        return 0.0
+    _validate_config(config)
+    if gradients is None:
+        gradients = _gradient_magnitude(image)
+    score, _, _ = _fbwr_score_from_gradients(image, gradients, box, config=config)
+    return score
+
+
+def fbwr_score_with_coverage(
+    image: np.ndarray,
+    box: Sequence[float],
+    *,
+    config: FBWRConfig = FBWRConfig(),
+    gradients: np.ndarray | None = None,
+) -> tuple[float, int, int]:
+    """Return score, valid sample count, and total sample count."""
+    image = np.asarray(image)
+    if image.ndim != 2:
+        raise ValueError("image must be a two-dimensional grayscale array")
+    if image.size == 0:
+        return 0.0, 0, 0
+    _validate_config(config)
+    if gradients is None:
+        gradients = _gradient_magnitude(image)
+    return _fbwr_score_from_gradients(image, gradients, box, config=config)
 
 
 def passes_fbwr(score: float, threshold: float) -> bool:
     """Return whether a score passes the supplied FBWR threshold."""
-    return bool(score > threshold)
+    return bool(score >= threshold)
 
 
 def fbwr_scores(
@@ -104,7 +148,17 @@ def fbwr_scores(
     config: FBWRConfig = FBWRConfig(),
 ) -> np.ndarray:
     """Score multiple xyxy boxes in one image and return a float array."""
-    return np.asarray([fbwr_score(image, box, config=config) for box in boxes], dtype=np.float32)
+    image = np.asarray(image)
+    if image.ndim != 2:
+        raise ValueError("image must be a two-dimensional grayscale array")
+    if image.size == 0:
+        return np.zeros(len(list(boxes)), dtype=np.float32)
+    _validate_config(config)
+    gradients = _gradient_magnitude(image)
+    return np.asarray(
+        [_fbwr_score_from_gradients(image, gradients, box, config=config)[0] for box in boxes],
+        dtype=np.float32,
+    )
 
 
 def fbwr_filter_boxes(
@@ -119,7 +173,7 @@ def fbwr_filter_boxes(
     if boxes.ndim != 2 or boxes.shape[1] != 4:
         raise ValueError("boxes must have shape [N, 4] in xyxy format")
     scores = fbwr_scores(image, boxes, config=config)
-    keep = scores > threshold
+    keep = scores >= threshold
     return boxes[keep], scores, keep
 
 
@@ -128,6 +182,8 @@ def fbwr_score_torch(
     box,
     *,
     config: FBWRConfig = FBWRConfig(),
+    gradients=None,
+    return_coverage: bool = False,
 ):
     """Compute the FBWR score for one grayscale tensor and one xyxy box.
 
@@ -138,13 +194,15 @@ def fbwr_score_torch(
 
     if image.ndim != 2:
         raise ValueError("image must be a two-dimensional grayscale tensor")
+    _validate_config(config)
     if hasattr(box, "detach"):
         box = box.detach().cpu().tolist()
     x1, y1, x2, y2 = _validate_box(box)
     height, width = image.shape
     image = image.float()
-    grad_y, grad_x = torch.gradient(image)
-    gradients = torch.hypot(grad_x, grad_y)
+    if gradients is None:
+        grad_y, grad_x = torch.gradient(image)
+        gradients = torch.hypot(grad_x, grad_y)
     values = []
     box_width, box_height = x2 - x1, y2 - y1
     half_size = min(box_width, box_height) / 2.0
@@ -166,4 +224,13 @@ def fbwr_score_torch(
                     if 0 <= ay < height and 0 <= ax < width and 0 <= by < height and 0 <= bx < width:
                         values.append(torch.abs(image[ay, ax] - image[by, bx]) * (gradients[ay, ax] + gradients[by, bx]) / 2.0)
 
-    return torch.stack(values).mean() if values else image.new_zeros(())
+    score = torch.stack(values).mean() if values else image.new_zeros(())
+    if return_coverage:
+        total_samples = (
+            (int(np.ceil(center_radius)) - int(np.floor(-center_radius)) + 1)
+            * (int(np.ceil(center_radius)) - int(np.floor(-center_radius)) + 1)
+            * len(radii)
+            * len(angles)
+        )
+        return score, len(values), total_samples
+    return score

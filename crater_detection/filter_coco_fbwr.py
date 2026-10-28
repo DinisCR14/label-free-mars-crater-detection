@@ -11,9 +11,19 @@ import cv2
 import numpy as np
 
 try:
-    from .fbwr import FBWRConfig, fbwr_score, fbwr_score_torch
+    from .fbwr import (
+        FBWRConfig,
+        _gradient_magnitude,
+        fbwr_score_torch,
+        fbwr_score_with_coverage,
+    )
 except ImportError:
-    from fbwr import FBWRConfig, fbwr_score, fbwr_score_torch
+    from fbwr import (
+        FBWRConfig,
+        _gradient_magnitude,
+        fbwr_score_torch,
+        fbwr_score_with_coverage,
+    )
 
 try:
     import torch
@@ -28,11 +38,15 @@ def filter_coco_predictions(
     *,
     threshold: float = 2000.0,
     device: str = "auto",
+    report_json: str | Path | None = None,
 ) -> None:
-    """Write a COCO prediction file containing only annotations above threshold."""
+    """Write FBWR-retained COCO predictions and a score audit report."""
     input_json = Path(input_json)
     image_root = Path(image_root)
     output_json = Path(output_json)
+    if report_json is None:
+        report_json = output_json.with_name(f"{output_json.stem}_report.json")
+    report_json = Path(report_json)
     with input_json.open("r", encoding="utf-8") as handle:
         coco = json.load(handle)
 
@@ -41,9 +55,17 @@ def filter_coco_predictions(
     kept_annotations = []
     config = FBWRConfig()
     image_cache: dict[int, np.ndarray] = {}
+    gradient_cache: dict[int, np.ndarray] = {}
+    torch_image_cache = {}
+    torch_gradient_cache = {}
+    scores: list[float] = []
+    kept_scores: list[float] = []
+    coverage: list[float] = []
     use_torch = torch is not None and (
         device == "cuda" or (device == "auto" and torch.cuda.is_available())
     )
+    if device == "cuda" and (torch is None or not torch.cuda.is_available()):
+        raise RuntimeError("--device cuda requires an available CUDA-enabled PyTorch")
     torch_device = torch.device("cuda" if device == "auto" else device) if use_torch else None
 
     for annotation in coco.get("annotations", []):
@@ -56,22 +78,83 @@ def filter_coco_predictions(
             image = cv2.imread(str(image_path), cv2.IMREAD_GRAYSCALE)
             if image is None:
                 raise FileNotFoundError(f"Could not read image: {image_path}")
+            expected_size = (image_info.get("width"), image_info.get("height"))
+            if all(value is not None for value in expected_size):
+                actual_size = (image.shape[1], image.shape[0])
+                if actual_size != expected_size:
+                    raise ValueError(
+                        f"Image dimensions for {image_path} are {actual_size}, "
+                        f"expected {expected_size} from COCO metadata"
+                    )
             image_cache[image_id] = image
+            if not use_torch:
+                gradient_cache[image_id] = _gradient_magnitude(image)
 
         x, y, width, height = annotation["bbox"]
         box = (x, y, x + width, y + height)
         if use_torch:
-            image_tensor = torch.as_tensor(image_cache[image_id], device=torch_device)
-            score = float(fbwr_score_torch(image_tensor, box, config=config).item())
+            if image_id not in torch_image_cache:
+                torch_image_cache[image_id] = torch.as_tensor(
+                    image_cache[image_id], device=torch_device
+                )
+                grad_y, grad_x = torch.gradient(torch_image_cache[image_id].float())
+                torch_gradient_cache[image_id] = torch.hypot(grad_x, grad_y)
+            score_tensor, valid_samples, total_samples = fbwr_score_torch(
+                torch_image_cache[image_id],
+                box,
+                config=config,
+                gradients=torch_gradient_cache[image_id],
+                return_coverage=True,
+            )
+            score = float(score_tensor.item())
         else:
-            score = fbwr_score(image_cache[image_id], box, config=config)
-        if score > threshold:
-            kept_annotations.append(annotation)
+            score, valid_samples, total_samples = fbwr_score_with_coverage(
+                image_cache[image_id],
+                box,
+                config=config,
+                gradients=gradient_cache[image_id],
+            )
+        scores.append(score)
+        coverage.append(valid_samples / total_samples if total_samples else 0.0)
+        if score >= threshold:
+            retained_annotation = copy.deepcopy(annotation)
+            retained_annotation["fbwr_score"] = score
+            retained_annotation["fbwr_valid_sample_fraction"] = coverage[-1]
+            kept_annotations.append(retained_annotation)
+            kept_scores.append(score)
 
     output["annotations"] = kept_annotations
     output_json.parent.mkdir(parents=True, exist_ok=True)
     with output_json.open("w", encoding="utf-8") as handle:
         json.dump(output, handle)
+
+    def summary(values: list[float]) -> dict[str, float | None]:
+        if not values:
+            return {"min": None, "max": None, "mean": None, "median": None}
+        return {
+            "min": min(values),
+            "max": max(values),
+            "mean": sum(values) / len(values),
+            "median": float(np.median(values)),
+        }
+
+    report = {
+        "input_json": str(input_json),
+        "image_root": str(image_root),
+        "output_json": str(output_json),
+        "threshold": threshold,
+        "comparison": ">=",
+        "device": "torch" if use_torch else "cpu",
+        "input_annotation_count": len(scores),
+        "retained_annotation_count": len(kept_annotations),
+        "discarded_annotation_count": len(scores) - len(kept_annotations),
+        "all_score_summary": summary(scores),
+        "retained_score_summary": summary(kept_scores),
+        "valid_sample_fraction_summary": summary(coverage),
+    }
+    report_json.parent.mkdir(parents=True, exist_ok=True)
+    with report_json.open("w", encoding="utf-8") as handle:
+        json.dump(report, handle, indent=2)
 
 
 def main() -> None:
@@ -81,6 +164,7 @@ def main() -> None:
     parser.add_argument("output_json", type=Path)
     parser.add_argument("--threshold", type=float, default=2000.0)
     parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
+    parser.add_argument("--report-json", type=Path)
     args = parser.parse_args()
     filter_coco_predictions(
         args.input_json,
@@ -88,6 +172,7 @@ def main() -> None:
         args.output_json,
         threshold=args.threshold,
         device=args.device,
+        report_json=args.report_json,
     )
 
 
