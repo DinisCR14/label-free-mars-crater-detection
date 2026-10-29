@@ -34,8 +34,16 @@ def _gradient_magnitude(image: np.ndarray) -> np.ndarray:
 
 
 def _validate_config(config: FBWRConfig) -> None:
-    if config.num_angles <= 0 or config.rim_margin < 0:
-        raise ValueError("num_angles must be positive and rim_margin non-negative")
+    if (
+        not np.isfinite(config.center_window_fraction)
+        or config.center_window_fraction < 0
+        or config.num_angles <= 0
+        or config.rim_margin < 0
+    ):
+        raise ValueError(
+            "center_window_fraction must be finite and non-negative, "
+            "num_angles must be positive, and rim_margin non-negative"
+        )
 
 
 def _fbwr_score_from_gradients(

@@ -39,6 +39,9 @@ def filter_coco_predictions(
     threshold: float = 2000.0,
     device: str = "auto",
     report_json: str | Path | None = None,
+    center_window_fraction: float = 0.10,
+    rim_margin: int = 5,
+    num_angles: int = 12,
 ) -> None:
     """Write FBWR-retained COCO predictions and a score audit report."""
     input_json = Path(input_json)
@@ -53,7 +56,11 @@ def filter_coco_predictions(
     output = copy.deepcopy(coco)
     image_by_id = {image["id"]: image for image in coco.get("images", [])}
     kept_annotations = []
-    config = FBWRConfig()
+    config = FBWRConfig(
+        center_window_fraction=center_window_fraction,
+        rim_margin=rim_margin,
+        num_angles=num_angles,
+    )
     image_cache: dict[int, np.ndarray] = {}
     gradient_cache: dict[int, np.ndarray] = {}
     torch_image_cache = {}
@@ -144,6 +151,11 @@ def filter_coco_predictions(
         "output_json": str(output_json),
         "threshold": threshold,
         "comparison": ">=",
+        "config": {
+            "center_window_fraction": config.center_window_fraction,
+            "rim_margin": config.rim_margin,
+            "num_angles": config.num_angles,
+        },
         "device": "torch" if use_torch else "cpu",
         "input_annotation_count": len(scores),
         "retained_annotation_count": len(kept_annotations),
@@ -165,6 +177,9 @@ def main() -> None:
     parser.add_argument("--threshold", type=float, default=2000.0)
     parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
     parser.add_argument("--report-json", type=Path)
+    parser.add_argument("--center-window-fraction", type=float, default=0.10)
+    parser.add_argument("--rim-margin", type=int, default=5)
+    parser.add_argument("--num-angles", type=int, default=12)
     args = parser.parse_args()
     filter_coco_predictions(
         args.input_json,
@@ -173,6 +188,9 @@ def main() -> None:
         threshold=args.threshold,
         device=args.device,
         report_json=args.report_json,
+        center_window_fraction=args.center_window_fraction,
+        rim_margin=args.rim_margin,
+        num_angles=args.num_angles,
     )
 
 

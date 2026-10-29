@@ -88,6 +88,10 @@ class TestFBWR(unittest.TestCase):
             self.assertEqual(report["input_annotation_count"], 2)
             self.assertEqual(report["retained_annotation_count"], 2)
             self.assertIn("valid_sample_fraction_summary", report)
+            self.assertEqual(
+                report["config"],
+                {"center_window_fraction": 0.1, "rim_margin": 5, "num_angles": 12},
+            )
 
 
 if __name__ == "__main__":
