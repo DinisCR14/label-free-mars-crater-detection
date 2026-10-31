@@ -9,6 +9,7 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+from tqdm import tqdm
 
 
 def _decode_segmentation(segmentation: dict, mask_utils) -> np.ndarray:
@@ -57,7 +58,11 @@ def refine_geometric_annotations(
     output = copy.deepcopy(coco)
     image_by_id = {image["id"]: image for image in coco.get("images", [])}
     refined = []
-    for source_annotation in coco.get("annotations", []):
+    for source_annotation in tqdm(
+        coco.get("annotations", []),
+        desc="Geometric refinement",
+        unit="annotation",
+    ):
         image = image_by_id.get(source_annotation.get("image_id"))
         segmentation = source_annotation.get("segmentation")
         if image is None or not isinstance(segmentation, dict):

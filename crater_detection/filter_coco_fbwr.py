@@ -9,6 +9,7 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+from tqdm import tqdm
 
 try:
     from .fbwr import (
@@ -75,7 +76,11 @@ def filter_coco_predictions(
         raise RuntimeError("--device cuda requires an available CUDA-enabled PyTorch")
     torch_device = torch.device("cuda" if device == "auto" else device) if use_torch else None
 
-    for annotation in coco.get("annotations", []):
+    for annotation in tqdm(
+        coco.get("annotations", []),
+        desc="FBWR filtering",
+        unit="annotation",
+    ):
         image_info = image_by_id.get(annotation["image_id"])
         if image_info is None:
             continue

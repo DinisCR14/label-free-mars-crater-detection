@@ -61,6 +61,10 @@ the gradient automatically when no precomputed gradient is supplied.
 The optimization does not change the sampling geometry, score formula,
 inclusive threshold comparison, or edge-sample handling.
 
+The geometric and FBWR command-line stages display `tqdm` progress bars while
+processing annotations. This is informational only and does not change the
+scoring or filtering behavior.
+
 ## Calibration status
 
 The calibration subset is external to the repository and contains 256

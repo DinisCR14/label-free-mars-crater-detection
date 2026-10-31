@@ -47,6 +47,20 @@ class LabelGenerationPipeline:
                 if not isinstance(annotation.get("segmentation"), (list, dict)):
                     raise ValueError("Mask-producing predictions require segmentation data")
 
+    def _limit_predictions(self, path: Path) -> None:
+        if self.args.limit is None:
+            return
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        selected_images = payload.get("images", [])[: self.args.limit]
+        selected_ids = {image["id"] for image in selected_images}
+        payload["images"] = selected_images
+        payload["annotations"] = [
+            annotation
+            for annotation in payload.get("annotations", [])
+            if annotation.get("image_id") in selected_ids
+        ]
+        path.write_text(json.dumps(payload), encoding="utf-8")
+
     def _prepare_raw_predictions(self) -> None:
         if self.args.existing_predictions is not None:
             source = self.args.existing_predictions.resolve()
@@ -56,6 +70,7 @@ class LabelGenerationPipeline:
             if not self.args.dry_run:
                 self.raw_dir.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(source, self.raw_json)
+                self._limit_predictions(self.raw_json)
             return
 
         if self.args.model == "grounding-dino":
