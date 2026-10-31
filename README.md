@@ -243,7 +243,9 @@ retain the raw file for provenance and geometry audits.
 
 The label-generation orchestrator supports the mask-producing backends
 Grounded SAM and SAM 3. It runs the selected backend and then applies the same
-geometric refinement and FBWR filtering stages:
+geometric refinement and FBWR filtering stages. Existing Grounding DINO box
+predictions can be processed with `--model grounding-dino --fbwr-only`; this
+skips geometric refinement and applies only FBWR.
 
 ```bash
 python scripts/run_label_generation.py \
@@ -261,8 +263,8 @@ With `--existing-predictions`, no foundation model is loaded. The file is
 validated, copied to `raw/predictions.json`, and processed into
 `refined.json` and `fbwr_filtered.json`. For new inference, omit
 `--existing-predictions` and provide the model-specific checkpoint/options.
-Grounding DINO remains a separate box-only runner because the common
-post-processing requires masks.
+The FBWR parameters can be overridden with `--fbwr-threshold`,
+`--center-window-fraction`, `--rim-margin`, and `--num-angles`.
 
 ### 2. Prepare the detector dataset
 

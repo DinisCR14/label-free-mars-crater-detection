@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from crater_detection.image_manifest import ImageManifest, validate_coco_mapping
 
 
-SUPPORTED_MODELS = ("grounded-sam", "sam3")
+SUPPORTED_MODELS = ("grounded-sam", "grounding-dino", "sam3")
 
 
 class LabelGenerationPipeline:
@@ -42,9 +42,10 @@ class LabelGenerationPipeline:
             self.manifest,
             require_fingerprint=not self.args.allow_legacy,
         )
-        for annotation in payload.get("annotations", []):
-            if not isinstance(annotation.get("segmentation"), (list, dict)):
-                raise ValueError("Mask-producing predictions require segmentation data")
+        if self.args.model != "grounding-dino":
+            for annotation in payload.get("annotations", []):
+                if not isinstance(annotation.get("segmentation"), (list, dict)):
+                    raise ValueError("Mask-producing predictions require segmentation data")
 
     def _prepare_raw_predictions(self) -> None:
         if self.args.existing_predictions is not None:
@@ -56,6 +57,11 @@ class LabelGenerationPipeline:
                 self.raw_dir.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(source, self.raw_json)
             return
+
+        if self.args.model == "grounding-dino":
+            raise ValueError(
+                "grounding-dino currently requires --existing-predictions"
+            )
 
         runner = (
             self.repo_root / "crater_detection" / "sam3_label_generation.py"
@@ -112,12 +118,17 @@ class LabelGenerationPipeline:
         self._prepare_raw_predictions()
         refined_json = self.output_dir / "refined.json"
         filtered_json = self.output_dir / "fbwr_filtered.json"
-        self._run([
-            self.args.python_executable,
-            str(self.repo_root / "crater_detection" / "geometric_refinement.py"),
-            str(self.raw_json),
-            str(refined_json),
-        ])
+        if self.args.fbwr_only:
+            if not self.args.dry_run:
+                refined_json.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(self.raw_json, refined_json)
+        else:
+            self._run([
+                self.args.python_executable,
+                str(self.repo_root / "crater_detection" / "geometric_refinement.py"),
+                str(self.raw_json),
+                str(refined_json),
+            ])
         self._run([
             self.args.python_executable,
             str(self.repo_root / "crater_detection" / "filter_coco_fbwr.py"),
@@ -128,6 +139,12 @@ class LabelGenerationPipeline:
             str(self.args.fbwr_threshold),
             "--device",
             self.args.device,
+            "--center-window-fraction",
+            str(self.args.center_window_fraction),
+            "--rim-margin",
+            str(self.args.rim_margin),
+            "--num-angles",
+            str(self.args.num_angles),
         ])
 
 
@@ -138,6 +155,11 @@ def main() -> None:
     parser.add_argument("--image-root", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--existing-predictions", type=Path)
+    parser.add_argument(
+        "--fbwr-only",
+        action="store_true",
+        help="Skip geometric refinement and apply FBWR directly to existing predictions",
+    )
     parser.add_argument("--allow-legacy", action="store_true")
     parser.add_argument("--prompt", default="circle")
     parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
@@ -145,6 +167,9 @@ def main() -> None:
     parser.add_argument("--limit", type=int)
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--fbwr-threshold", type=float, default=2000.0)
+    parser.add_argument("--center-window-fraction", type=float, default=0.10)
+    parser.add_argument("--rim-margin", type=int, default=5)
+    parser.add_argument("--num-angles", type=int, default=12)
     parser.add_argument("--sam-checkpoint", type=Path)
     parser.add_argument("--grounding-model-id", default="IDEA-Research/grounding-dino-base")
     parser.add_argument("--sam-model-type", default="vit_h")
@@ -161,6 +186,12 @@ def main() -> None:
         parser.error("--limit must be positive")
     if args.batch_size < 1:
         parser.error("--batch-size must be positive")
+    if args.center_window_fraction < 0:
+        parser.error("--center-window-fraction must be non-negative")
+    if args.rim_margin < 0:
+        parser.error("--rim-margin must be non-negative")
+    if args.num_angles < 1:
+        parser.error("--num-angles must be positive")
     for name in (
         "box_threshold",
         "text_threshold",
@@ -173,6 +204,8 @@ def main() -> None:
     if args.existing_predictions is None and args.model == "grounded-sam":
         if args.sam_checkpoint is None:
             parser.error("--sam-checkpoint is required for grounded-sam inference")
+    if args.existing_predictions is None and args.model == "grounding-dino":
+        parser.error("--existing-predictions is required for grounding-dino")
     try:
         LabelGenerationPipeline(args).run()
     except (FileNotFoundError, ValueError, json.JSONDecodeError) as error:
