@@ -118,3 +118,11 @@ prioritizing conservative pseudo-label precision. The baseline geometry
 (`0.10`, `5`, `12`) remains the recommended starting geometry because angle
 count is stable and rim-margin changes require a separate threshold
 recalibration.
+
+The effect of filtering can be analyzed with
+`tools/evaluation/analyze_filter_effect.py`. In addition to aggregate
+precision and recall, it reports the custom small, medium, and large size
+categories. True positives are assigned the matched ground-truth size, while
+false positives use the prediction bbox size. This makes it possible to check
+that a conservative threshold is not disproportionately removing small
+craters before selecting a production configuration.
