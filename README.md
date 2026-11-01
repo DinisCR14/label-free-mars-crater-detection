@@ -261,10 +261,17 @@ python scripts/run_label_generation.py \
 
 With `--existing-predictions`, no foundation model is loaded. The file is
 validated, copied to `raw/predictions.json`, and processed into
-`refined.json` and `fbwr_filtered.json`. For new inference, omit
+`refined.json`, `fbwr_scored.json`, and `fbwr_filtered.json`. For new inference, omit
 `--existing-predictions` and provide the model-specific checkpoint/options.
 The FBWR parameters can be overridden with `--fbwr-threshold`,
 `--center-window-fraction`, `--rim-margin`, and `--num-angles`.
+
+To score predictions once and defer threshold selection, add
+`--fbwr-score-only`. This writes `fbwr_scored.json` without selecting a final
+pseudo-label threshold. Later runs can pass
+`--existing-fbwr-scores /path/to/fbwr_scored.json` together with a different
+`--fbwr-threshold`; cached scores are checked against the refined annotations
+and FBWR geometry.
 
 ### 2. Prepare the detector dataset
 

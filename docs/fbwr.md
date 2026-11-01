@@ -65,6 +65,20 @@ The geometric and FBWR command-line stages display `tqdm` progress bars while
 processing annotations. This is informational only and does not change the
 scoring or filtering behavior.
 
+## Score caching
+
+FBWR scoring is separated from threshold selection by
+`crater_detection/filter_coco_fbwr.py`. A normal run writes
+`fbwr_scored.json` alongside `fbwr_filtered.json`; the scored document keeps
+all input annotations with `fbwr_score` and
+`fbwr_valid_sample_fraction`. Reusing that document with `--existing-scores`
+applies a new threshold without rereading images or recomputing FBWR. The
+stored geometry is validated before cached scores are accepted.
+
+The label-generation orchestrator supports `--fbwr-score-only` to prepare a
+score cache and `--existing-fbwr-scores` to reuse one. Score caches are valid
+only for the same refined prediction annotations and FBWR geometry.
+
 ## Calibration status
 
 The calibration subset is external to the repository and contains 256

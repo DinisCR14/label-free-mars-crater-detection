@@ -43,6 +43,7 @@ def filter_coco_predictions(
     center_window_fraction: float = 0.10,
     rim_margin: int = 5,
     num_angles: int = 12,
+    scores_json: str | Path | None = None,
 ) -> None:
     """Write FBWR-retained COCO predictions and a score audit report."""
     input_json = Path(input_json)
@@ -57,6 +58,7 @@ def filter_coco_predictions(
     output = copy.deepcopy(coco)
     image_by_id = {image["id"]: image for image in coco.get("images", [])}
     kept_annotations = []
+    scored_annotations = []
     config = FBWRConfig(
         center_window_fraction=center_window_fraction,
         rim_margin=rim_margin,
@@ -146,17 +148,31 @@ def filter_coco_predictions(
             scores.append(score)
             coverage_value = valid_samples / total_samples if total_samples else 0.0
             coverage.append(coverage_value)
+            scored_annotation = copy.deepcopy(annotation)
+            scored_annotation["fbwr_score"] = score
+            scored_annotation["fbwr_valid_sample_fraction"] = coverage_value
+            scored_annotations.append(scored_annotation)
             if score >= threshold:
-                retained_annotation = copy.deepcopy(annotation)
-                retained_annotation["fbwr_score"] = score
-                retained_annotation["fbwr_valid_sample_fraction"] = coverage_value
-                kept_annotations.append(retained_annotation)
+                kept_annotations.append(scored_annotation)
                 kept_scores.append(score)
 
     output["annotations"] = kept_annotations
     output_json.parent.mkdir(parents=True, exist_ok=True)
     with output_json.open("w", encoding="utf-8") as handle:
         json.dump(output, handle)
+    if scores_json is not None:
+        scored_output = copy.deepcopy(coco)
+        scored_output["annotations"] = scored_annotations
+        scored_output["fbwr"] = {
+            "center_window_fraction": config.center_window_fraction,
+            "rim_margin": config.rim_margin,
+            "num_angles": config.num_angles,
+            "device": "torch" if use_torch else "cpu",
+        }
+        scores_path = Path(scores_json)
+        scores_path.parent.mkdir(parents=True, exist_ok=True)
+        with scores_path.open("w", encoding="utf-8") as handle:
+            json.dump(scored_output, handle)
 
     def summary(values: list[float]) -> dict[str, float | None]:
         if not values:
@@ -192,6 +208,95 @@ def filter_coco_predictions(
         json.dump(report, handle, indent=2)
 
 
+def filter_scored_predictions(
+    scores_json: str | Path,
+    output_json: str | Path,
+    *,
+    threshold: float = 2000.0,
+    report_json: str | Path | None = None,
+    expected_config: dict[str, float | int] | None = None,
+    input_json: str | Path | None = None,
+) -> None:
+    """Filter a previously scored COCO document without recomputing FBWR."""
+    scores_path = Path(scores_json)
+    output_path = Path(output_json)
+    if report_json is None:
+        report_json = output_path.with_name(f"{output_path.stem}_report.json")
+    scored = json.loads(scores_path.read_text(encoding="utf-8"))
+    stored_config = scored.get("fbwr")
+    if not isinstance(stored_config, dict):
+        raise ValueError(f"FBWR score cache has no configuration: {scores_path}")
+    config_keys = ("center_window_fraction", "rim_margin", "num_angles")
+    if expected_config is not None:
+        for key in config_keys:
+            if stored_config.get(key) != expected_config[key]:
+                raise ValueError(
+                    f"FBWR score cache {scores_path} has incompatible {key}: "
+                    f"{stored_config.get(key)!r} != {expected_config[key]!r}"
+                )
+    if input_json is not None:
+        source = json.loads(Path(input_json).read_text(encoding="utf-8"))
+        source_keys = {
+            (int(annotation["image_id"]), int(annotation["id"]))
+            for annotation in source.get("annotations", [])
+        }
+        scored_keys = {
+            (int(annotation["image_id"]), int(annotation["id"]))
+            for annotation in scored.get("annotations", [])
+        }
+        if source_keys != scored_keys:
+            raise ValueError("FBWR score cache does not match refined predictions")
+
+    annotations = scored.get("annotations", [])
+    for annotation in annotations:
+        if "fbwr_score" not in annotation or "fbwr_valid_sample_fraction" not in annotation:
+            raise ValueError(f"FBWR score cache annotation is missing scores: {annotation!r}")
+    kept = [
+        copy.deepcopy(annotation)
+        for annotation in annotations
+        if float(annotation["fbwr_score"]) >= threshold
+    ]
+    output = copy.deepcopy(scored)
+    output.pop("fbwr", None)
+    output["annotations"] = kept
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(output), encoding="utf-8")
+
+    all_scores = [float(annotation["fbwr_score"]) for annotation in annotations]
+    kept_scores = [float(annotation["fbwr_score"]) for annotation in kept]
+
+    def summary(values: list[float]) -> dict[str, float | None]:
+        if not values:
+            return {"min": None, "max": None, "mean": None, "median": None}
+        return {
+            "min": min(values),
+            "max": max(values),
+            "mean": sum(values) / len(values),
+            "median": float(np.median(values)),
+        }
+
+    report = {
+        "input_json": str(scores_path),
+        "output_json": str(output_path),
+        "threshold": threshold,
+        "comparison": ">=",
+        "config": {key: stored_config[key] for key in config_keys},
+        "device": stored_config.get("device", "unknown"),
+        "input_annotation_count": len(annotations),
+        "retained_annotation_count": len(kept),
+        "discarded_annotation_count": len(annotations) - len(kept),
+        "all_score_summary": summary(all_scores),
+        "retained_score_summary": summary(kept_scores),
+        "valid_sample_fraction_summary": summary(
+            [float(annotation["fbwr_valid_sample_fraction"]) for annotation in annotations]
+        ),
+        "score_cache": True,
+    }
+    report_path = Path(report_json)
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("input_json", type=Path)
@@ -203,18 +308,46 @@ def main() -> None:
     parser.add_argument("--center-window-fraction", type=float, default=0.10)
     parser.add_argument("--rim-margin", type=int, default=5)
     parser.add_argument("--num-angles", type=int, default=12)
-    args = parser.parse_args()
-    filter_coco_predictions(
-        args.input_json,
-        args.image_root,
-        args.output_json,
-        threshold=args.threshold,
-        device=args.device,
-        report_json=args.report_json,
-        center_window_fraction=args.center_window_fraction,
-        rim_margin=args.rim_margin,
-        num_angles=args.num_angles,
+    parser.add_argument(
+        "--scores-json",
+        type=Path,
+        help="Also write all scored annotations for later threshold filtering",
     )
+    parser.add_argument(
+        "--existing-scores",
+        type=Path,
+        help="Filter an existing score cache instead of recomputing FBWR",
+    )
+    args = parser.parse_args()
+    if args.existing_scores is not None and args.scores_json is not None:
+        parser.error("--existing-scores and --scores-json cannot be combined")
+    config = {
+        "center_window_fraction": args.center_window_fraction,
+        "rim_margin": args.rim_margin,
+        "num_angles": args.num_angles,
+    }
+    if args.existing_scores is not None:
+        filter_scored_predictions(
+            args.existing_scores,
+            args.output_json,
+            threshold=args.threshold,
+            report_json=args.report_json,
+            expected_config=config,
+            input_json=args.input_json,
+        )
+    else:
+        filter_coco_predictions(
+            args.input_json,
+            args.image_root,
+            args.output_json,
+            threshold=args.threshold,
+            device=args.device,
+            report_json=args.report_json,
+            center_window_fraction=args.center_window_fraction,
+            rim_margin=args.rim_margin,
+            num_angles=args.num_angles,
+            scores_json=args.scores_json,
+        )
 
 
 if __name__ == "__main__":

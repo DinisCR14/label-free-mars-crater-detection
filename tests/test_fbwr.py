@@ -13,7 +13,10 @@ from crater_detection.fbwr import (
     fbwr_score,
     fbwr_scores,
 )
-from crater_detection.filter_coco_fbwr import filter_coco_predictions
+from crater_detection.filter_coco_fbwr import (
+    filter_coco_predictions,
+    filter_scored_predictions,
+)
 
 
 class TestFBWR(unittest.TestCase):
@@ -108,6 +111,53 @@ class TestFBWR(unittest.TestCase):
                 report["config"],
                 {"center_window_fraction": 0.1, "rim_margin": 5, "num_angles": 12},
             )
+
+    def test_scored_cache_can_be_filtered_without_recomputing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            image_path = root / "image.png"
+            input_path = root / "input.json"
+            scores_path = root / "scores.json"
+            output_path = root / "output.json"
+            cv2.imwrite(str(image_path), self.image)
+            input_path.write_text(
+                json.dumps(
+                    {
+                        "images": [{"id": 1, "file_name": image_path.name}],
+                        "annotations": [
+                            {"id": 1, "image_id": 1, "bbox": [16, 16, 32, 32]},
+                            {"id": 2, "image_id": 1, "bbox": [8, 8, 16, 16]},
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            filter_coco_predictions(
+                input_path,
+                root,
+                output_path,
+                threshold=-1.0,
+                device="cpu",
+                scores_json=scores_path,
+            )
+            cached_output = root / "cached-output.json"
+            filter_scored_predictions(
+                scores_path,
+                cached_output,
+                threshold=2000.0,
+                expected_config={
+                    "center_window_fraction": 0.1,
+                    "rim_margin": 5,
+                    "num_angles": 12,
+                },
+                input_json=input_path,
+            )
+            cached = json.loads(cached_output.read_text(encoding="utf-8"))
+            self.assertEqual(len(cached["annotations"]), 0)
+            report = json.loads(
+                (root / "cached-output_report.json").read_text(encoding="utf-8")
+            )
+            self.assertTrue(report["score_cache"])
 
 
 if __name__ == "__main__":

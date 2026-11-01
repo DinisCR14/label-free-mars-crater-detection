@@ -132,6 +132,7 @@ class LabelGenerationPipeline:
     def run(self) -> None:
         self._prepare_raw_predictions()
         refined_json = self.output_dir / "refined.json"
+        scored_json = self.output_dir / "fbwr_scored.json"
         filtered_json = self.output_dir / "fbwr_filtered.json"
         if self.args.fbwr_only:
             if not self.args.dry_run:
@@ -144,7 +145,9 @@ class LabelGenerationPipeline:
                 str(self.raw_json),
                 str(refined_json),
             ])
-        self._run([
+        if self.args.fbwr_score_only and self.args.existing_fbwr_scores is not None:
+            raise ValueError("--fbwr-score-only cannot be combined with --existing-fbwr-scores")
+        command = [
             self.args.python_executable,
             str(self.repo_root / "crater_detection" / "filter_coco_fbwr.py"),
             str(refined_json),
@@ -160,7 +163,20 @@ class LabelGenerationPipeline:
             str(self.args.rim_margin),
             "--num-angles",
             str(self.args.num_angles),
-        ])
+        ]
+        if self.args.existing_fbwr_scores is not None:
+            command.extend(["--existing-scores", str(self.args.existing_fbwr_scores.resolve())])
+        else:
+            command.extend(["--scores-json", str(scored_json)])
+        if not self.args.fbwr_score_only:
+            self._run(command)
+        else:
+            self._run(command)
+            if not self.args.dry_run and filtered_json.exists():
+                filtered_json.unlink()
+            filtered_report = self.output_dir / "fbwr_filtered_report.json"
+            if not self.args.dry_run and filtered_report.exists():
+                filtered_report.unlink()
 
 
 def main() -> None:
@@ -182,6 +198,16 @@ def main() -> None:
     parser.add_argument("--limit", type=int)
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--fbwr-threshold", type=float, default=2000.0)
+    parser.add_argument(
+        "--fbwr-score-only",
+        action="store_true",
+        help="Compute and save fbwr_scored.json without selecting a threshold",
+    )
+    parser.add_argument(
+        "--existing-fbwr-scores",
+        type=Path,
+        help="Reuse a score cache and skip expensive FBWR scoring",
+    )
     parser.add_argument("--center-window-fraction", type=float, default=0.10)
     parser.add_argument("--rim-margin", type=int, default=5)
     parser.add_argument("--num-angles", type=int, default=12)
