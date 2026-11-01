@@ -185,6 +185,105 @@ def fbwr_filter_boxes(
     return boxes[keep], scores, keep
 
 
+def _torch_sample_coordinates(
+    box: Sequence[float],
+    image_shape: tuple[int, int],
+    config: FBWRConfig,
+) -> tuple[list[tuple[int, int, int, int]], int]:
+    x1, y1, x2, y2 = _validate_box(box)
+    height, width = image_shape
+    half_size = min(x2 - x1, y2 - y1) / 2.0
+    center_radius = config.center_window_fraction * half_size
+    center_x, center_y = (x1 + x2) / 2.0, (y1 + y2) / 2.0
+    radius_min = max(1.0, half_size - config.rim_margin)
+    radius_max = half_size + config.rim_margin
+    radii = range(int(np.floor(radius_min)), int(np.ceil(radius_max)) + 1)
+    angles = np.arange(config.num_angles, dtype=np.float32) * np.pi / config.num_angles
+    offsets = range(int(np.floor(-center_radius)), int(np.ceil(center_radius)) + 1)
+    coordinates = []
+    for offset_y in offsets:
+        for offset_x in offsets:
+            for radius in radii:
+                for angle in angles:
+                    dx = radius * float(np.cos(angle))
+                    dy = radius * float(np.sin(angle))
+                    ay, ax = int(round(center_y + offset_y + dy)), int(round(center_x + offset_x + dx))
+                    by, bx = int(round(center_y + offset_y - dy)), int(round(center_x + offset_x - dx))
+                    coordinates.append((ay, ax, by, bx))
+    return coordinates, len(coordinates)
+
+
+def fbwr_scores_torch(
+    image,
+    boxes,
+    *,
+    config: FBWRConfig = FBWRConfig(),
+    gradients=None,
+    batch_size: int = 64,
+    return_coverage: bool = False,
+):
+    """Score multiple boxes in parallel using a shared Torch image gradient."""
+    import torch
+
+    if image.ndim != 2:
+        raise ValueError("image must be a two-dimensional grayscale tensor")
+    _validate_config(config)
+    if batch_size <= 0:
+        raise ValueError("batch_size must be positive")
+    boxes = list(boxes)
+    image = image.float()
+    if gradients is None:
+        grad_y, grad_x = torch.gradient(image)
+        gradients = torch.hypot(grad_x, grad_y)
+    height, width = image.shape
+    samples = [_torch_sample_coordinates(box, (height, width), config) for box in boxes]
+    scores = []
+    valid_counts = []
+    total_counts = []
+    for start in range(0, len(boxes), batch_size):
+        batch_samples = samples[start:start + batch_size]
+        max_samples = max((len(item[0]) for item in batch_samples), default=0)
+        if max_samples == 0:
+            scores.append(image.new_zeros((len(batch_samples),)))
+            valid_counts.extend([0] * len(batch_samples))
+            total_counts.extend(item[1] for item in batch_samples)
+            continue
+        coordinates = torch.zeros(
+            (len(batch_samples), max_samples, 4), dtype=torch.long, device=image.device
+        )
+        lengths = torch.tensor(
+            [len(items) for items, _ in batch_samples],
+            dtype=torch.long,
+            device=image.device,
+        )
+        for index, (items, _) in enumerate(batch_samples):
+            if items:
+                coordinates[index, :len(items)] = torch.as_tensor(
+                    items, dtype=torch.long, device=image.device
+                )
+        ay, ax, by, bx = coordinates.unbind(dim=2)
+        valid = (
+            (ay < height) & (ax < width) & (by < height) & (bx < width)
+            & (ay >= 0) & (ax >= 0) & (by >= 0) & (bx >= 0)
+        )
+        valid &= torch.arange(max_samples, device=image.device).unsqueeze(0) < lengths.unsqueeze(1)
+        values = torch.abs(image[ay.clamp(0, height - 1), ax.clamp(0, width - 1)]
+                           - image[by.clamp(0, height - 1), bx.clamp(0, width - 1)])
+        endpoint_gradient = (
+            gradients[ay.clamp(0, height - 1), ax.clamp(0, width - 1)]
+            + gradients[by.clamp(0, height - 1), bx.clamp(0, width - 1)]
+        ) / 2.0
+        values = values * endpoint_gradient * valid
+        counts = valid.sum(dim=1)
+        scores.append(values.sum(dim=1) / counts.clamp_min(1))
+        valid_counts.extend(counts.cpu().tolist())
+        total_counts.extend(item[1] for item in batch_samples)
+    scores = torch.cat(scores) if scores else image.new_zeros((0,))
+    if return_coverage:
+        return scores, valid_counts, total_counts
+    return scores
+
+
 def fbwr_score_torch(
     image,
     box,
@@ -205,40 +304,10 @@ def fbwr_score_torch(
     _validate_config(config)
     if hasattr(box, "detach"):
         box = box.detach().cpu().tolist()
-    x1, y1, x2, y2 = _validate_box(box)
-    height, width = image.shape
-    image = image.float()
-    if gradients is None:
-        grad_y, grad_x = torch.gradient(image)
-        gradients = torch.hypot(grad_x, grad_y)
-    values = []
-    box_width, box_height = x2 - x1, y2 - y1
-    half_size = min(box_width, box_height) / 2.0
-    center_radius = config.center_window_fraction * half_size
-    center_x, center_y = (x1 + x2) / 2.0, (y1 + y2) / 2.0
-    radius_min = max(1.0, half_size - config.rim_margin)
-    radius_max = half_size + config.rim_margin
-    radii = range(int(np.floor(radius_min)), int(np.ceil(radius_max)) + 1)
-    angles = np.arange(config.num_angles, dtype=np.float32) * np.pi / config.num_angles
-
-    for offset_y in range(int(np.floor(-center_radius)), int(np.ceil(center_radius)) + 1):
-        for offset_x in range(int(np.floor(-center_radius)), int(np.ceil(center_radius)) + 1):
-            for radius in radii:
-                for angle in angles:
-                    dx = radius * float(np.cos(angle))
-                    dy = radius * float(np.sin(angle))
-                    ay, ax = int(round(center_y + offset_y + dy)), int(round(center_x + offset_x + dx))
-                    by, bx = int(round(center_y + offset_y - dy)), int(round(center_x + offset_x - dx))
-                    if 0 <= ay < height and 0 <= ax < width and 0 <= by < height and 0 <= bx < width:
-                        values.append(torch.abs(image[ay, ax] - image[by, bx]) * (gradients[ay, ax] + gradients[by, bx]) / 2.0)
-
-    score = torch.stack(values).mean() if values else image.new_zeros(())
+    scores, valid_counts, total_counts = fbwr_scores_torch(
+        image, [box], config=config, gradients=gradients, return_coverage=True
+    )
+    score = scores[0]
     if return_coverage:
-        total_samples = (
-            (int(np.ceil(center_radius)) - int(np.floor(-center_radius)) + 1)
-            * (int(np.ceil(center_radius)) - int(np.floor(-center_radius)) + 1)
-            * len(radii)
-            * len(angles)
-        )
-        return score, len(values), total_samples
+        return score, valid_counts[0], total_counts[0]
     return score

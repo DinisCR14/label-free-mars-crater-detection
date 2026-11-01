@@ -48,6 +48,22 @@ class TestFBWR(unittest.TestCase):
         with self.assertRaises(ValueError):
             fbwr_score(self.image, (1, 2, 1, 4), config=self.config)
 
+    def test_torch_batch_matches_cpu_scores_and_coverage(self):
+        torch = __import__("torch")
+        from crater_detection.fbwr import fbwr_scores_torch, fbwr_score_with_coverage
+
+        image_tensor = torch.as_tensor(self.image)
+        scores, valid, total = fbwr_scores_torch(
+            image_tensor, self.boxes, config=self.config, return_coverage=True
+        )
+        for index, box in enumerate(self.boxes):
+            cpu_score, cpu_valid, cpu_total = fbwr_score_with_coverage(
+                self.image, box, config=self.config
+            )
+            self.assertAlmostEqual(float(scores[index]), cpu_score, places=4)
+            self.assertEqual(valid[index], cpu_valid)
+            self.assertEqual(total[index], cpu_total)
+
     def test_coco_filter_computes_gradient_once_per_image(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

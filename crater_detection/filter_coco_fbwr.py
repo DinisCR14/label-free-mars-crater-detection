@@ -15,14 +15,14 @@ try:
     from .fbwr import (
         FBWRConfig,
         _gradient_magnitude,
-        fbwr_score_torch,
+        fbwr_scores_torch,
         fbwr_score_with_coverage,
     )
 except ImportError:
     from fbwr import (
         FBWRConfig,
         _gradient_magnitude,
-        fbwr_score_torch,
+        fbwr_scores_torch,
         fbwr_score_with_coverage,
     )
 
@@ -76,15 +76,18 @@ def filter_coco_predictions(
         raise RuntimeError("--device cuda requires an available CUDA-enabled PyTorch")
     torch_device = torch.device("cuda" if device == "auto" else device) if use_torch else None
 
-    for annotation in tqdm(
-        coco.get("annotations", []),
+    annotations_by_image: dict[int, list[dict]] = {}
+    for annotation in coco.get("annotations", []):
+        annotations_by_image.setdefault(annotation["image_id"], []).append(annotation)
+
+    for image_id, image_annotations in tqdm(
+        annotations_by_image.items(),
         desc="FBWR filtering",
-        unit="annotation",
+        unit="image",
     ):
-        image_info = image_by_id.get(annotation["image_id"])
+        image_info = image_by_id.get(image_id)
         if image_info is None:
             continue
-        image_id = image_info["id"]
         if image_id not in image_cache:
             image_path = image_root / image_info["file_name"]
             image = cv2.imread(str(image_path), cv2.IMREAD_GRAYSCALE)
@@ -102,8 +105,6 @@ def filter_coco_predictions(
             if not use_torch:
                 gradient_cache[image_id] = _gradient_magnitude(image)
 
-        x, y, width, height = annotation["bbox"]
-        box = (x, y, x + width, y + height)
         if use_torch:
             if image_id not in torch_image_cache:
                 torch_image_cache[image_id] = torch.as_tensor(
@@ -111,29 +112,46 @@ def filter_coco_predictions(
                 )
                 grad_y, grad_x = torch.gradient(torch_image_cache[image_id].float())
                 torch_gradient_cache[image_id] = torch.hypot(grad_x, grad_y)
-            score_tensor, valid_samples, total_samples = fbwr_score_torch(
+            boxes = [
+                (x, y, x + width, y + height)
+                for x, y, width, height in (annotation["bbox"] for annotation in image_annotations)
+            ]
+            score_tensors, valid_samples_list, total_samples_list = fbwr_scores_torch(
                 torch_image_cache[image_id],
-                box,
+                boxes,
                 config=config,
                 gradients=torch_gradient_cache[image_id],
                 return_coverage=True,
             )
-            score = float(score_tensor.item())
         else:
-            score, valid_samples, total_samples = fbwr_score_with_coverage(
-                image_cache[image_id],
-                box,
-                config=config,
-                gradients=gradient_cache[image_id],
-            )
-        scores.append(score)
-        coverage.append(valid_samples / total_samples if total_samples else 0.0)
-        if score >= threshold:
-            retained_annotation = copy.deepcopy(annotation)
-            retained_annotation["fbwr_score"] = score
-            retained_annotation["fbwr_valid_sample_fraction"] = coverage[-1]
-            kept_annotations.append(retained_annotation)
-            kept_scores.append(score)
+            scores_list = []
+            valid_samples_list = []
+            total_samples_list = []
+            for annotation in image_annotations:
+                x, y, width, height = annotation["bbox"]
+                score, valid_samples, total_samples = fbwr_score_with_coverage(
+                    image_cache[image_id], (x, y, x + width, y + height),
+                    config=config, gradients=gradient_cache[image_id],
+                )
+                scores_list.append(score)
+                valid_samples_list.append(valid_samples)
+                total_samples_list.append(total_samples)
+        for annotation, score, valid_samples, total_samples in zip(
+            image_annotations,
+            scores_list if not use_torch else score_tensors.detach().cpu().tolist(),
+            valid_samples_list,
+            total_samples_list,
+        ):
+            score = float(score)
+            scores.append(score)
+            coverage_value = valid_samples / total_samples if total_samples else 0.0
+            coverage.append(coverage_value)
+            if score >= threshold:
+                retained_annotation = copy.deepcopy(annotation)
+                retained_annotation["fbwr_score"] = score
+                retained_annotation["fbwr_valid_sample_fraction"] = coverage_value
+                kept_annotations.append(retained_annotation)
+                kept_scores.append(score)
 
     output["annotations"] = kept_annotations
     output_json.parent.mkdir(parents=True, exist_ok=True)
