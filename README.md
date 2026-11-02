@@ -24,7 +24,13 @@ The label-generation pipeline does not require crater annotations. The detector 
 
 ## Experimental Setting
 
-The experiments use the global THEMIS daytime infrared mosaic. Non-overlapping $512 \times 512$ pixel tiles are sampled while excluding latitudes beyond $\pm50^\circ$, resulting in 9,122 tiles split into 80% training, 10% validation, and 10% evaluation data. The evaluation catalog is the Robbins and Hynek Mars crater catalog; it is not required for the label-free training workflow.
+The experiments use the global THEMIS daytime infrared mosaic. Non-overlapping
+$512 \times 512$ source tiles are sampled. The corrected images can have
+overlapping geographic footprints because the cylindrical-projection correction
+widens tiles away from the equator. The corrected dataset therefore uses an
+overlap-aware spatial split rather than a random image split. The evaluation
+catalog is the Robbins and Hynek Mars crater catalog; it is not required for
+the label-free training workflow.
 
 The reported Grounded DINO/SAM settings are the `circle` text prompt, box threshold `0.30`, and text threshold `0.25`. Geometric refinement retains ellipse axis ratios in `[0.7, 1.3]`. Initial FBWR filtering uses threshold `2000` on 8-bit imagery; the normalized detector-side FBWR threshold is `0.03`.
 
@@ -288,6 +294,13 @@ python tools/dataset/prepare_training_dataset.py \
   --seed 0 \
   --link-mode symlink
 ```
+
+The dataset preparation command uses an overlap-aware spatial split by default.
+Corrected tiles whose geographic footprints overlap are kept in the same split,
+so no training image overlaps a validation or test image. Use
+`--split-strategy random` only for legacy comparisons. To inspect the overlap
+groups before preparing the dataset, run
+`tools/dataset/audit_spatial_overlap.py` with the canonical manifest.
 
 This creates `train/`, `val/`, `test/`, `annotations/`, and
 `split-manifest.json`. The pseudo-labels are used only for

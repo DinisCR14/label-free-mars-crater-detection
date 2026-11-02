@@ -3,7 +3,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from tools.dataset.prepare_training_dataset import prepare_training_dataset
+from crater_detection.image_manifest import ManifestImage
+from tools.dataset.prepare_training_dataset import (
+    _overlap_groups,
+    prepare_training_dataset,
+)
 
 
 class PrepareTrainingDatasetTests(unittest.TestCase):
@@ -53,6 +57,7 @@ class PrepareTrainingDatasetTests(unittest.TestCase):
                 output,
                 seed=7,
                 link_mode="copy",
+                split_strategy="random",
             )
 
             self.assertEqual(
@@ -65,6 +70,7 @@ class PrepareTrainingDatasetTests(unittest.TestCase):
                     root / "prepared-again",
                     seed=7,
                     link_mode="copy",
+                    split_strategy="random",
                 )["images"]["train"],
             )
             train = json.loads(
@@ -75,6 +81,37 @@ class PrepareTrainingDatasetTests(unittest.TestCase):
             self.assertEqual(len(list((output / "train").glob("*.png"))), 8)
             self.assertEqual(len(list((output / "val").glob("*.png"))), 1)
             self.assertEqual(len(list((output / "test").glob("*.png"))), 1)
+
+    def test_spatial_split_keeps_overlapping_latitude_rows_together(self):
+        images = tuple(
+        ManifestImage(
+            index,
+            f"lat_{latitude}.0_long_{longitude}.0_corrected.png",
+            512,
+            512,
+        )
+        for index, (latitude, longitude) in enumerate(
+            (
+                (40, 0),
+                (40, 2),
+                (42, 0),
+                (42, 2),
+                (44, 0),
+                (44, 2),
+            )
+        )
+        )
+        groups, _ = _overlap_groups(images)
+
+        self.assertEqual(len(groups), 3)
+        self.assertTrue(all(len(group) == 2 for group in groups))
+        self.assertEqual(
+            {image.file_name for image in groups[0]},
+            {
+                "lat_40.0_long_0.0_corrected.png",
+                "lat_40.0_long_2.0_corrected.png",
+            },
+        )
 
 
 if __name__ == "__main__":
