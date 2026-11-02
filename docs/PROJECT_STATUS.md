@@ -118,12 +118,11 @@ the geometry or the candidate prediction set requires a new score cache.
 
 ## Next steps
 
-1. Verify the initial detector-training configuration and initial checkpoint.
-2. Run a training dry-run.
-3. Run initial detector training using `train_initial.json`.
-4. Evaluate the initial checkpoint on the fixed spatial validation and test
+1. Run an initial-only training dry-run with `--initial-only`.
+2. Run initial detector training using `train_initial.json`.
+3. Evaluate the initial checkpoint on the fixed spatial validation and test
    sets.
-5. Run self-training rounds if the initial detector is viable.
-6. Train and evaluate the final standard-loss detector.
-7. Compare detector results against the threshold-2000 and other cached
+4. Run self-training rounds if the initial detector is viable.
+5. Train and evaluate the final standard-loss detector.
+6. Compare detector results against the threshold-2000 and other cached
    pseudo-label variants if needed.

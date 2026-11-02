@@ -48,12 +48,14 @@ class TrainingPipeline:
     def _resolve_python_executable(executable: str) -> str:
         executable_path = Path(executable).expanduser()
         if executable_path.is_absolute() or executable_path.parent != Path("."):
-            resolved = executable_path.resolve()
+            # Preserve virtual-environment symlinks so subprocesses keep that
+            # interpreter's site-packages.
+            resolved = Path(os.path.abspath(executable_path))
         else:
             located = shutil.which(executable)
             if located is None:
                 raise FileNotFoundError(f"Python executable not found: {executable}")
-            resolved = Path(located).resolve()
+            resolved = Path(os.path.abspath(located))
         if not resolved.is_file():
             raise FileNotFoundError(f"Python executable not found: {resolved}")
         return str(resolved)
@@ -62,7 +64,11 @@ class TrainingPipeline:
         print("$ " + " ".join(command))
         if not self.dry_run:
             environment = os.environ.copy()
-            python_path = [str(self.config.cutler_root), environment.get("PYTHONPATH", "")]
+            python_path = [
+                str(self.config.cutler_root),
+                str(self.config.cutler_root / "detectron2"),
+                environment.get("PYTHONPATH", ""),
+            ]
             environment["PYTHONPATH"] = os.pathsep.join(path for path in python_path if path)
             environment["CRATER_DATASET_ROOT"] = str(self.config.dataset_root)
             environment["CRATER_ANNOTATIONS_DIR"] = str(self.config.annotations_dir)
@@ -103,7 +109,7 @@ class TrainingPipeline:
         ])
         return command
 
-    def run(self) -> None:
+    def run(self, *, initial_only: bool = False) -> None:
         initial_dir = self.config.output_root / "initial-training"
         self._run(self._train_net_command(
             self.config.base_config,
@@ -111,6 +117,9 @@ class TrainingPipeline:
             self.config.initial_weights,
             dataset_name="crater_dataset_train",
         ))
+        if initial_only:
+            return
+
         previous_annotations = self.config.initial_annotations
         previous_weights = initial_dir / "model_final.pth"
 
@@ -171,6 +180,11 @@ def main() -> None:
     parser.add_argument("--output-root", type=Path, required=True)
     parser.add_argument("--num-gpus", type=int, default=1)
     parser.add_argument("--python-executable", default="python")
+    parser.add_argument(
+        "--initial-only",
+        action="store_true",
+        help="Run initial detector training and stop before self-training.",
+    )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
@@ -209,7 +223,7 @@ def main() -> None:
         num_gpus=args.num_gpus,
         python_executable=args.python_executable,
     )
-    TrainingPipeline(config, dry_run=args.dry_run).run()
+    TrainingPipeline(config, dry_run=args.dry_run).run(initial_only=args.initial_only)
 
 
 if __name__ == "__main__":

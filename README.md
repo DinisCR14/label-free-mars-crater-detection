@@ -66,9 +66,13 @@ python -m pip install --upgrade pip
 # Install PyTorch using the command selected for your machine.
 python -m pip install -r requirements.txt
 python -m pip install -r third_party/CutLER/requirements.txt
-python -m pip install -e third_party/CutLER/detectron2
+python -m pip install --no-build-isolation -e third_party/CutLER/detectron2
 python -m pip install -e .
 ```
+
+The Detectron2 source build requires the Python development headers and a C++
+compiler. On Debian-based systems, install `python3.12-dev` (matching the
+active interpreter) and `ninja-build` before the editable install.
 
 CPU execution is suitable for schema checks, refinement, FBWR evaluation, and workflow dry runs. Foundation-model inference and detector training can require substantial memory and runtime.
 
@@ -326,6 +330,26 @@ python scripts/run_training_pipeline.py \
   --standard-loss-config third_party/CutLER/cutler/model_zoo/configs/CutLER-CraterDataset/cascade_mask_rcnn_R_50_FPN_final.yaml \
   --python-executable .venv/bin/python
 ```
+
+To run only the initial detector training before evaluating its checkpoint,
+add `--initial-only`:
+
+```bash
+python scripts/run_training_pipeline.py \
+  --dataset-root /home/dcortereal/datasets/sam3-training-threshold-1500-spatial \
+  --initial-annotations /home/dcortereal/datasets/sam3-training-threshold-1500-spatial/annotations/train_initial.json \
+  --initial-weights /home/dcortereal/models/dino_RN50_pretrain_d2_format.pkl \
+  --annotations-dir /home/dcortereal/datasets/sam3-training-threshold-1500-spatial/annotations \
+  --output-root /home/dcortereal/datasets/sam3-training-threshold-1500-spatial/training \
+  --standard-loss-config third_party/CutLER/cutler/model_zoo/configs/CutLER-CraterDataset/cascade_mask_rcnn_R_50_FPN_final.yaml \
+  --python-executable .venv/bin/python \
+  --initial-only
+```
+
+This creates `training/initial-training/` and stops before inference,
+self-training, or final standard-loss training. Evaluate
+`model_final.pth` on the fixed spatial validation and test datasets before
+starting the complete pipeline.
 
 ### 4. Run the complete workflow
 
