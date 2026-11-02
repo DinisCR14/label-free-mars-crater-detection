@@ -8,6 +8,10 @@ This project investigates crater detection in Martian THEMIS imagery without usi
 
 The repository is intended to support reproducible research experiments. Datasets, model checkpoints, and generated outputs are external artifacts and are not distributed here.
 
+For the current experiment state, verified external artifacts, annotation
+policy, and next pipeline steps, see
+[docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md).
+
 ## Method Overview
 
 ```text
