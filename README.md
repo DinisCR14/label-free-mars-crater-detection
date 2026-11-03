@@ -55,24 +55,60 @@ docs/citation.bib       BibTeX citation for the associated paper
 
 ## Environment Setup
 
-Use an isolated Python environment. Python 3.9 is the reference environment; other versions may require compatible PyTorch, Detectron2, and third-party package versions.
+Use separate isolated environments for foundation-model label generation and
+CutLER detector training. Their dependency requirements are incompatible:
+SAM 3 requires `iopath>=0.1.10`, while Detectron2 0.6 requires
+`iopath<0.1.10`.
 
-Install a PyTorch build appropriate for the target machine before installing Detectron2. The exact command depends on the operating system, Python version, and CPU/CUDA setup; use the official PyTorch selector for that command.
+### Foundation-model environment
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-# Install PyTorch using the command selected for your machine.
+# Install the PyTorch build selected for the target machine.
 python -m pip install -r requirements.txt
-python -m pip install -r third_party/CutLER/requirements.txt
-python -m pip install --no-build-isolation -e third_party/CutLER/detectron2
 python -m pip install -e .
+python -m pip install "iopath>=0.1.10"
 ```
+
+Use `.venv` for SAM 3, Grounding DINO, Grounded SAM, FBWR, dataset
+preparation, and evaluation. Do not install the CutLER requirements or
+Detectron2 into this environment.
+
+### CutLER detector environment
+
+Create a second environment for detector training. Install the same
+CUDA-enabled PyTorch build as the foundation-model environment, using the
+official PyTorch selector if it is not already available:
+
+```bash
+python3.12 -m venv .venv-cutler
+.venv-cutler/bin/pip install --upgrade pip
+# Install the matching CUDA-enabled PyTorch build here.
+.venv-cutler/bin/pip install -r third_party/CutLER/requirements.txt
+.venv-cutler/bin/pip install --no-build-isolation -e third_party/CutLER/detectron2
+```
+
+The CutLER environment intentionally uses `iopath<0.1.10`. Verify both
+environments independently:
+
+```bash
+.venv/bin/pip check
+.venv-cutler/bin/pip check
+PYTHONPATH="$PWD/third_party/CutLER:$PWD/third_party/CutLER/cutler:$PWD/third_party/CutLER/detectron2" \
+  .venv-cutler/bin/python -c \
+  'import torch, detectron2; import detectron2.data; import detectron2._C; \
+   print(torch.cuda.is_available(), torch.cuda.device_count())'
+```
+
+Use `--python-executable .venv-cutler/bin/python` when invoking
+`scripts/run_training_pipeline.py`. Keep both environment directories local
+and untracked.
 
 The Detectron2 source build requires the Python development headers and a C++
 compiler. On Debian-based systems, install `python3.12-dev` (matching the
-active interpreter) and `ninja-build` before the editable install.
+active CutLER interpreter) and `ninja-build` before the editable install.
 
 CPU execution is suitable for schema checks, refinement, FBWR evaluation, and workflow dry runs. Foundation-model inference and detector training can require substantial memory and runtime.
 
@@ -328,7 +364,7 @@ python scripts/run_training_pipeline.py \
   --annotations-dir /home/dcortereal/datasets/sam3-training-threshold-04/annotations \
   --output-root /home/dcortereal/datasets/sam3-training-threshold-04/training \
   --standard-loss-config third_party/CutLER/cutler/model_zoo/configs/CutLER-CraterDataset/cascade_mask_rcnn_R_50_FPN_final.yaml \
-  --python-executable .venv/bin/python
+  --python-executable .venv-cutler/bin/python
 ```
 
 To run only the initial detector training before evaluating its checkpoint,
@@ -342,7 +378,7 @@ python scripts/run_training_pipeline.py \
   --annotations-dir /home/dcortereal/datasets/sam3-training-threshold-1500-spatial/annotations \
   --output-root /home/dcortereal/datasets/sam3-training-threshold-1500-spatial/training \
   --standard-loss-config third_party/CutLER/cutler/model_zoo/configs/CutLER-CraterDataset/cascade_mask_rcnn_R_50_FPN_final.yaml \
-  --python-executable .venv/bin/python \
+  --python-executable .venv-cutler/bin/python \
   --initial-only
 ```
 
@@ -366,9 +402,14 @@ python scripts/run_full_pipeline.py \
   --existing-predictions /home/dcortereal/datasets/sam3-runs/full-corrected-centerlat/sam3-circle-threshold-04.json \
   --initial-weights /models/dino_RN50_pretrain_d2_format.pkl \
   --output-root /home/dcortereal/datasets/sam3-training-threshold-04 \
-  --python-executable .venv/bin/python \
+  --label-python-executable .venv/bin/python \
+  --training-python-executable .venv-cutler/bin/python \
   --allow-legacy
 ```
+
+Use `--python-executable` only when all stages intentionally share one
+environment. The explicit label and training options avoid mixing the SAM 3
+and CutLER dependency sets.
 
 Add `--dry-run` to inspect the generated commands without loading models or
 starting training.

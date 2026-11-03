@@ -25,7 +25,12 @@ def main() -> None:
     parser.add_argument("--sam-checkpoint", type=Path)
     parser.add_argument("--prompt", default="circle")
     parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
-    parser.add_argument("--python-executable", default="python")
+    parser.add_argument(
+        "--python-executable",
+        help="Use one interpreter for every stage (legacy fallback).",
+    )
+    parser.add_argument("--label-python-executable")
+    parser.add_argument("--training-python-executable")
     parser.add_argument("--standard-loss-config", type=Path, default=(
         Path(__file__).resolve().parents[1]
         / "third_party/CutLER/cutler/model_zoo/configs/CutLER-CraterDataset"
@@ -47,10 +52,14 @@ def main() -> None:
     labels_root = output_root / "labels"
     dataset_root = output_root / "dataset"
     training_root = output_root / "training"
-    python_args = ["--python-executable", args.python_executable]
+    label_python = args.label_python_executable or args.python_executable or "python"
+    training_python = (
+        args.training_python_executable or args.python_executable or label_python
+    )
+    python_args = ["--python-executable", training_python]
 
     label_command = [
-        args.python_executable,
+        label_python,
         str(repo_root / "scripts/run_label_generation.py"),
         "--model", args.model,
         "--manifest", str(args.manifest.resolve()),
@@ -73,7 +82,7 @@ def main() -> None:
     _run(label_command, cwd=repo_root, dry_run=args.dry_run)
 
     prepare_command = [
-        args.python_executable,
+        label_python,
         str(repo_root / "tools/dataset/prepare_training_dataset.py"),
         "--manifest", str(args.manifest.resolve()),
         "--image-root", str(args.image_root.resolve()),
@@ -86,7 +95,7 @@ def main() -> None:
     _run(prepare_command, cwd=repo_root, dry_run=args.dry_run)
 
     training_command = [
-        args.python_executable,
+        training_python,
         str(repo_root / "scripts/run_training_pipeline.py"),
         "--dataset-root", str(dataset_root),
         "--initial-annotations", str((dataset_root / "annotations/train_initial.json").resolve()),

@@ -5,6 +5,11 @@
 The project is ready for initial detector training. The spatially isolated
 training dataset has been prepared from the cached SAM 3 pseudo-labels.
 
+The Python environment is split by pipeline stage. `.venv` is reserved for
+SAM 3 and other foundation-model work, while `.venv-cutler` is reserved for
+CutLER/Detectron2 training. This is required because SAM 3 declares
+`iopath>=0.1.10` and Detectron2 0.6 declares `iopath<0.1.10`.
+
 ## Selected configuration
 
 - Foundation model: SAM 3
@@ -118,11 +123,18 @@ the geometry or the candidate prediction set requires a new score cache.
 
 ## Next steps
 
-1. Run an initial-only training dry-run with `--initial-only`.
-2. Run initial detector training using `train_initial.json`.
-3. Evaluate the initial checkpoint on the fixed spatial validation and test
+1. Create and verify `.venv-cutler` using the environment instructions in
+   [README.md](../README.md#cutler-detector-environment).
+2. Use `.venv` for label generation and dataset preparation, and
+   `.venv-cutler` for detector training. `run_full_pipeline.py` accepts
+   `--label-python-executable` and `--training-python-executable` for this
+   split.
+3. Run an initial-only training dry-run with `--initial-only` using
+   `.venv-cutler/bin/python`.
+4. Run initial detector training using `train_initial.json`.
+5. Evaluate the initial checkpoint on the fixed spatial validation and test
    sets.
-4. Run self-training rounds if the initial detector is viable.
-5. Train and evaluate the final standard-loss detector.
-6. Compare detector results against the threshold-2000 and other cached
+6. Run self-training rounds if the initial detector is viable.
+7. Train and evaluate the final standard-loss detector.
+8. Compare detector results against the threshold-2000 and other cached
    pseudo-label variants if needed.
