@@ -66,6 +66,7 @@ class TrainingPipeline:
             environment = os.environ.copy()
             python_path = [
                 str(self.config.cutler_root),
+                str(self.config.cutler_root / "cutler"),
                 str(self.config.cutler_root / "detectron2"),
                 environment.get("PYTHONPATH", ""),
             ]

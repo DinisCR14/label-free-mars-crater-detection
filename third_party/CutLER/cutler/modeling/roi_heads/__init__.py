@@ -11,6 +11,4 @@ from .roi_heads import (
 from .custom_cascade_rcnn_fbwr2 import CustomCascadeROIHeads
 from .fast_rcnn import FastRCNNOutputLayers
 
-from . import custom_cascade_rcnn  # isort:skip
-
 __all__ = list(globals().keys())
