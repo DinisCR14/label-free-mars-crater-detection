@@ -15,6 +15,7 @@ htmlcov/
 
 # Virtual environments and local configuration
 .venv/
+.venv-cutler/
 venv/
 env/
 ENV/

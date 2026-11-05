@@ -2,8 +2,9 @@
 
 ## Current stage
 
-The project is ready for initial detector training. The spatially isolated
-training dataset has been prepared from the cached SAM 3 pseudo-labels.
+Initial detector training has completed. The spatially isolated training
+dataset was prepared from the cached SAM 3 pseudo-labels, and the initial
+checkpoint is ready for fixed validation and test evaluation.
 
 The Python environment is split by pipeline stage. `.venv` is reserved for
 SAM 3 and other foundation-model work, while `.venv-cutler` is reserved for
@@ -56,6 +57,51 @@ recomputing FBWR.
 - Training pseudo-labels: `96,921`
 - Validation reference annotations: `27,244`
 - Test reference annotations: `26,709`
+
+## Initial detector baseline
+
+- Checkpoint:
+  `/home/dcortereal/datasets/sam3-training-threshold-1500-spatial/training/initial-training/model_final.pth`
+- Reported validation bbox metrics:
+  - AP: `11.49`
+  - AP50: `28.94`
+  - AP75: `7.04`
+  - AP small: `5.28`
+  - AP medium: `26.00`
+  - AP large: `29.62`
+- Reported validation segmentation metrics:
+  - AP: `11.23`
+  - AP50: `28.11`
+  - AP75: `7.04`
+  - AP small: `4.40`
+  - AP medium: `28.37`
+  - AP large: `28.96`
+- Validation predictions:
+  `/home/dcortereal/datasets/sam3-training-threshold-1500-spatial/evaluation/initial-validation/inference/coco_instances_results.json`
+- Representative prediction/reference overlays:
+  `/home/dcortereal/datasets/sam3-training-threshold-1500-spatial/evaluation/initial-validation/overlays/combined-score-0.70`
+
+These are an initial baseline only. The weak small-object performance and
+high-confidence false positives make a longer initial-training experiment
+necessary before starting self-training.
+
+## Experiment 1: longer initial training
+
+The first improvement experiment keeps the pseudo-labels, architecture,
+pretrained weights, spatial split, and evaluation protocol unchanged. It only
+increases training from `4,000` to `20,000` iterations using
+`cascade_mask_rcnn_R_50_FPN_modified_long.yaml`. This tests whether the
+initial detector was undertrained before changing labels or augmentation.
+
+The experiment must use a new output directory:
+
+```text
+/home/dcortereal/datasets/sam3-training-threshold-1500-spatial/training/initial-training-20k
+```
+
+Compare its fixed validation AP, AP50, AP75, and size-stratified metrics with
+the baseline before considering self-training. Do not use reference
+annotations to alter the training labels.
 
 ## Annotation policy
 
@@ -123,18 +169,14 @@ the geometry or the candidate prediction set requires a new score cache.
 
 ## Next steps
 
-1. Create and verify `.venv-cutler` using the environment instructions in
-   [README.md](../README.md#cutler-detector-environment).
-2. Use `.venv` for label generation and dataset preparation, and
+1. Run Experiment 1 with the longer initial-training configuration.
+2. Evaluate the Experiment 1 checkpoint on the fixed spatial validation set
+   and render representative overlays.
+3. Use `.venv` for label generation and dataset preparation, and
    `.venv-cutler` for detector training. `run_full_pipeline.py` accepts
    `--label-python-executable` and `--training-python-executable` for this
    split.
-3. Run an initial-only training dry-run with `--initial-only` using
-   `.venv-cutler/bin/python`.
-4. Run initial detector training using `train_initial.json`.
-5. Evaluate the initial checkpoint on the fixed spatial validation and test
-   sets.
-6. Run self-training rounds if the initial detector is viable.
-7. Train and evaluate the final standard-loss detector.
-8. Compare detector results against the threshold-2000 and other cached
+4. Run self-training rounds only if the improved initial detector is viable.
+5. Train and evaluate the final standard-loss detector.
+6. Compare detector results against the threshold-2000 and other cached
    pseudo-label variants if needed.

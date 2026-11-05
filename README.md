@@ -387,6 +387,32 @@ self-training, or final standard-loss training. Evaluate
 `model_final.pth` on the fixed spatial validation and test datasets before
 starting the complete pipeline.
 
+#### Experiment 1: longer initial training
+
+The first improvement experiment tests whether the baseline detector was
+undertrained. It keeps the same SAM 3 pseudo-labels, architecture, pretrained
+weights, spatial split, and evaluation protocol, but increases
+`SOLVER.MAX_ITER` from `4000` to `20000`. Use a new output directory so the
+baseline checkpoint remains unchanged:
+
+```bash
+.venv-cutler/bin/python scripts/run_training_pipeline.py \
+  --dataset-root /home/dcortereal/datasets/sam3-training-threshold-1500-spatial \
+  --initial-annotations /home/dcortereal/datasets/sam3-training-threshold-1500-spatial/annotations/train_initial.json \
+  --initial-weights /home/dcortereal/models/dino_RN50_pretrain_d2_format.pkl \
+  --annotations-dir /home/dcortereal/datasets/sam3-training-threshold-1500-spatial/annotations \
+  --output-root /home/dcortereal/datasets/sam3-training-threshold-1500-spatial/training/initial-training-20k \
+  --base-config third_party/CutLER/cutler/model_zoo/configs/CutLER-CraterDataset/cascade_mask_rcnn_R_50_FPN_modified_long.yaml \
+  --standard-loss-config third_party/CutLER/cutler/model_zoo/configs/CutLER-CraterDataset/cascade_mask_rcnn_R_50_FPN_final.yaml \
+  --python-executable .venv-cutler/bin/python \
+  --num-gpus 1 \
+  --initial-only
+```
+
+Compare the resulting checkpoint on the fixed validation set before starting
+self-training. Do not use validation or test reference annotations as
+training labels.
+
 ### 4. Run the complete workflow
 
 The combined command performs inference or existing-prediction processing,
