@@ -311,9 +311,9 @@ class CustomAMPTrainer(CustomSimpleTrainer):
             visualize_copy_paste=visualize_copy_paste)
 
         if grad_scaler is None:
-            from torch.cuda.amp import GradScaler
+            from torch.amp import GradScaler
 
-            grad_scaler = GradScaler()
+            grad_scaler = GradScaler("cuda")
         self.grad_scaler = grad_scaler
 
     def run_step(self):
@@ -322,8 +322,6 @@ class CustomAMPTrainer(CustomSimpleTrainer):
         """
         assert self.model.training, "[AMPTrainer] model was changed to eval mode!"
         assert torch.cuda.is_available(), "[AMPTrainer] CUDA is required for AMP training!"
-        from torch.cuda.amp import autocast
-
         start = time.perf_counter()
         data = next(self._data_loader_iter)
         if self.use_copy_paste:
@@ -331,7 +329,7 @@ class CustomAMPTrainer(CustomSimpleTrainer):
             data = self.copy_and_paste(copy.deepcopy(data[::-1]), data)
         data_time = time.perf_counter() - start
 
-        with autocast():
+        with torch.amp.autocast("cuda"):
             loss_dict = self.model(data)
             if isinstance(loss_dict, torch.Tensor):
                 losses = loss_dict
