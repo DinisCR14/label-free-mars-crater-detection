@@ -1,4 +1,5 @@
 _BASE_: "cascade_mask_rcnn_R_50_FPN_modified.yaml"
 
 SOLVER:
+  STEPS: (15000,)
   MAX_ITER: 20000
