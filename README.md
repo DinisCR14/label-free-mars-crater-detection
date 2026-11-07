@@ -413,6 +413,33 @@ Compare the resulting checkpoint on the fixed validation set before starting
 self-training. Do not use validation or test reference annotations as
 training labels.
 
+#### Controlled augmentation experiment: disable copy-paste
+
+High-confidence triage indicates that the detector has both inherited
+pseudo-label errors and detector-only false positives. To test whether the
+aggressive copy-paste augmentation contributes to the detector-only errors,
+run the same 20,000-iteration schedule with only `DATALOADER.COPY_PASTE`
+disabled:
+
+```bash
+.venv-cutler/bin/python scripts/run_training_pipeline.py \
+  --dataset-root /home/dcortereal/datasets/sam3-training-threshold-1500-spatial \
+  --initial-annotations /home/dcortereal/datasets/sam3-training-threshold-1500-spatial/annotations/train_initial.json \
+  --initial-weights /home/dcortereal/models/dino_RN50_pretrain_d2_format.pkl \
+  --annotations-dir /home/dcortereal/datasets/sam3-training-threshold-1500-spatial/annotations \
+  --output-root /home/dcortereal/datasets/sam3-training-threshold-1500-spatial/training/initial-training-20k-no-copy-paste \
+  --base-config third_party/CutLER/cutler/model_zoo/configs/CutLER-CraterDataset/cascade_mask_rcnn_R_50_FPN_modified_no_copy_paste.yaml \
+  --standard-loss-config third_party/CutLER/cutler/model_zoo/configs/CutLER-CraterDataset/cascade_mask_rcnn_R_50_FPN_final.yaml \
+  --python-executable .venv-cutler/bin/python \
+  --num-gpus 1 \
+  --initial-only
+```
+
+Compare the 15,000-iteration checkpoint from this run with the existing 15k
+checkpoint. This keeps the architecture, labels, pretrained weights, split,
+optimizer schedule, and evaluation protocol fixed while changing only
+copy-paste augmentation.
+
 ### 4. Run the complete workflow
 
 The combined command performs inference or existing-prediction processing,

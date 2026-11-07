@@ -1,0 +1,4 @@
+_BASE_: "cascade_mask_rcnn_R_50_FPN_modified_long.yaml"
+
+DATALOADER:
+  COPY_PASTE: False
