@@ -562,6 +562,8 @@ In the accompanying paper, the label-free approach improves the zero-shot baseli
 The crater-specific configurations are under `third_party/CutLER/cutler/model_zoo/configs/CutLER-CraterDataset/`:
 
 - `cascade_mask_rcnn_R_50_FPN_modified.yaml`: initial training;
+- `cascade_mask_rcnn_R_50_FPN_modified_no_droploss.yaml`: initial-training
+  Drop Loss ablation;
 - `cascade_mask_rcnn_R_50_FPN_self_train_modified.yaml`: self-training rounds with FBWR-enhanced DropLoss;
 - `cascade_mask_rcnn_R_50_FPN_final.yaml`: final standard-loss training.
 

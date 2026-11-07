@@ -85,6 +85,36 @@ These are an initial baseline only. The weak small-object performance and
 high-confidence false positives make a longer initial-training experiment
 necessary before starting self-training.
 
+### Drop Loss ablation
+
+The initial detector uses FBWR Drop Loss, but its detector-side FBWR crater
+threshold is `0.03`, which is not equivalent to the pseudo-label filtering
+threshold of `1500`. The thresholds use different intensity representations:
+the pseudo-label filter operates on uint8-derived scores, while the detector
+loss operates on normalized grayscale inputs.
+
+To isolate whether Drop Loss contributes to the high-confidence predictions,
+the next controlled run keeps the initial 4k schedule, copy-paste augmentation,
+pseudo-labels, architecture, and weights unchanged. It changes only:
+
+```yaml
+MODEL:
+  ROI_HEADS:
+    USE_DROPLOSS: False
+```
+
+Configuration:
+
+```text
+third_party/CutLER/cutler/model_zoo/configs/CutLER-CraterDataset/cascade_mask_rcnn_R_50_FPN_modified_no_droploss.yaml
+```
+
+The output must use a separate directory:
+
+```text
+/home/dcortereal/datasets/sam3-training-threshold-1500-spatial/training/initial-training-no-droploss
+```
+
 ## Experiment 1: longer initial training
 
 The first improvement experiment keeps the pseudo-labels, architecture,
@@ -163,6 +193,85 @@ At score `>= 0.70`, greedy one-to-one bbox matching gives approximate
 precision of `41.9%` at IoU `0.50` and `17.3%` at IoU `0.75` for 4k, compared
 with `45.3%` and `20.6%` for 15k. This confirms a modest localization and
 precision improvement, but not a solution to the false-positive problem.
+
+## Copy-paste ablation result
+
+The copy-paste-disabled run completed with the same 20k schedule. The
+like-for-like 15k checkpoint evaluation is:
+
+| Configuration | AP | AP50 | AP75 | AP small | AP medium | AP large |
+|---|---:|---:|---:|---:|---:|---:|
+| 15k with copy-paste | 11.79 | 26.59 | 8.79 | 4.85 | 28.62 | 31.80 |
+| 15k without copy-paste | 11.73 | 25.14 | 9.32 | 4.79 | 28.05 | 31.03 |
+
+Segmentation metrics for the no-copy-paste 15k checkpoint are AP `11.79`,
+AP50 `25.32`, AP75 `9.42`, AP small `4.15`, AP medium `29.42`, and AP large
+`31.76`. The no-copy-paste configuration slightly improves strict
+localization (AP75) but reduces AP50 and does not improve small-crater AP.
+The final 20k no-copy-paste checkpoint is weaker still: bbox AP `9.44`,
+AP50 `22.70`, AP75 `6.78`, and AP small `3.77`.
+
+The ablation therefore does not support copy-paste as the sole cause of the
+high-confidence false positives. It changes the precision/localization
+trade-off, but does not produce a clear overall improvement.
+
+## Forensic catalogue and detector audit
+
+The 15k high-confidence audit was joined by canonical `file_name`. On the
+1,203 validation images:
+
+- Reference annotations: `27,244`
+- Filtered SAM 3 pseudo-labels: `3,824`
+- Greedy reference/pseudo-label matches at bbox IoU `>= 0.50`: `2,656`
+- Validation images with no filtered SAM 3 pseudo-label: `321`
+
+This large coverage difference is expected for label-free training: pseudo
+labels are proposals, not the evaluation authority, and the detector is
+expected to discover craters absent from them. Under the canonical annotation
+policy, a prediction that does not match the reference catalogue remains a
+candidate false positive unless the reference geometry or mapping audit shows
+otherwise. At score `>= 0.95`, the 15k detector has `1,325`
+reference-unmatched predictions; `484` overlap a filtered pseudo-label and
+`841` overlap neither source. Pseudo-label overlap does not make a prediction
+correct.
+
+Among the `841` detector-only cases, the bbox-area diagnostic classified
+`289` as small, `524` as medium, `1` as large, and `27` as border-touching
+cases (the border subset overlaps the size counts). These are diagnostic
+categories, not ground-truth error labels. The raw and clipped canonical
+reference files contain the same `483,463` annotations; clipping changes
+image-bounded COCO boxes while preserving the reference ellipse geometry.
+The next audit must compare the `1,325` unmatched predictions against that
+ellipse geometry and the filename mapping before classifying them as
+detector errors. Detailed outputs are stored at:
+
+```text
+/home/dcortereal/datasets/sam3-training-threshold-1500-spatial/analysis/forensic/
+```
+
+The first raw-ellipse audit found `612` of the `1,325` bbox-unmatched
+predictions to be plausible reference-geometry candidates under a provisional
+center-and-scale test. This is not a correctness label; it indicates that
+bbox IoU is too coarse for final triage and that localization/ellipse
+clipping effects may explain a substantial portion of the apparent
+false-positive count. The detailed provisional records are in
+`reference_geometry_audit.json` under the forensic directory.
+
+Representative raw-ellipse overlays for manual review are stored in:
+
+```text
+/home/dcortereal/datasets/sam3-training-threshold-1500-spatial/analysis/forensic/geometry_candidates/
+/home/dcortereal/datasets/sam3-training-threshold-1500-spatial/analysis/forensic/geometry_non_candidates/
+```
+
+The `713` provisional non-candidates are available as a ranked review queue
+with score, tile, bbox, size, and geometry diagnostics, plus 20 contact
+sheets:
+
+```text
+/home/dcortereal/datasets/sam3-training-threshold-1500-spatial/analysis/forensic/review/non_candidates_review.csv
+/home/dcortereal/datasets/sam3-training-threshold-1500-spatial/analysis/forensic/review/non_candidates_sheet_*.jpg
+```
 
 ## High-confidence prediction triage
 
