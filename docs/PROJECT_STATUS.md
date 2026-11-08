@@ -177,6 +177,49 @@ third_party/CutLER/cutler/model_zoo/configs/CutLER-CraterDataset/cascade_mask_rc
 Do not launch all three self-training rounds until this Round 1 comparison has
 been evaluated.
 
+Both Round 1 checkpoints were evaluated on the fixed validation set. The
+results are:
+
+| Round 1 self-training | AP | AP50 | AP75 | AP small | AP medium | AP large |
+|---|---:|---:|---:|---:|---:|---:|
+| Drop Loss enabled | 12.87 | 29.82 | 9.07 | 6.29 | 28.85 | 29.69 |
+| Drop Loss disabled | 12.52 | 28.85 | 8.88 | 5.73 | 28.44 | 29.12 |
+
+At the same time, the confidence/matching audit shows:
+
+| Confidence threshold | Configuration | Predictions | Reference IoU >= 0.50 | Pseudo-label IoU >= 0.50 | Neither source |
+|---|---|---:|---:|---:|---:|
+| >= 0.70 | Drop Loss enabled | 16,863 | 8,479 (50.3%) | 3,639 | 7,702 |
+| >= 0.70 | Drop Loss disabled | 7,258 | 5,462 (75.3%) | 3,387 | 1,326 |
+| >= 0.90 | Drop Loss enabled | 10,663 | 6,927 (65.0%) | 3,500 | 3,179 |
+| >= 0.90 | Drop Loss disabled | 5,419 | 4,531 (83.6%) | 3,187 | 524 |
+| >= 0.95 | Drop Loss enabled | 8,233 | 6,076 (73.8%) | 3,376 | 1,691 |
+| >= 0.95 | Drop Loss disabled | 4,628 | 4,021 (86.9%) | 3,038 | 299 |
+
+Round 1 Drop Loss improves aggregate AP by `0.35` points, but it produces
+approximately `2.7x` as many predictions at confidence `>= 0.95` and
+approximately `5.7x` as many predictions unmatched to both annotation
+sources. The no-DropLoss variant therefore remains the safer candidate for
+the next round unless recall of catalogue-missing craters is prioritized over
+confidence reliability. The evaluation outputs are stored under:
+
+```text
+/home/dcortereal/datasets/sam3-training-threshold-1500-spatial/round1-pilot/evaluation-with-droploss/
+/home/dcortereal/datasets/sam3-training-threshold-1500-spatial/round1-pilot/evaluation-without-droploss/
+```
+
+A focused visual review set of 48 high-confidence predictions produced by the
+Drop Loss model but not matched by the no-DropLoss model is stored at:
+
+```text
+/home/dcortereal/datasets/sam3-training-threshold-1500-spatial/round1-pilot/qualitative/drop-loss-extra/
+```
+
+The review sheets draw Drop Loss-only predictions in red, no-DropLoss
+predictions in green, and reference boxes in blue. These are selection aids,
+not correctness labels; catalogue omissions and bbox/ellipse localization
+differences still require separate review.
+
 ## Experiment 1: longer initial training
 
 The first improvement experiment keeps the pseudo-labels, architecture,

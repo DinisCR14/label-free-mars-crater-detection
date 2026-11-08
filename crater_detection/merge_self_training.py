@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+from tqdm import tqdm
 
 try:
     from .export_coco import COCO_CATEGORIES
@@ -113,7 +114,11 @@ def merge_self_training_annotations(
     images = dict(previous_images)
     images.update(new_images)
     merged_annotations: list[dict] = []
-    for image_id, image in images.items():
+    for image_id, image in tqdm(
+        images.items(),
+        total=len(images),
+        desc="Merging self-training annotations",
+    ):
         old_annotations = previous_by_image.get(image_id, [])
         new_annotations = predictions_by_image.get(image_id, [])
         prepared_new = [
