@@ -1,0 +1,5 @@
+_BASE_: "cascade_mask_rcnn_R_50_FPN_self_train_modified.yaml"
+
+MODEL:
+  ROI_HEADS:
+    USE_DROPLOSS: False

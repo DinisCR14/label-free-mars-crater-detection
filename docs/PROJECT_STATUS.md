@@ -115,6 +115,68 @@ The output must use a separate directory:
 /home/dcortereal/datasets/sam3-training-threshold-1500-spatial/training/initial-training-no-droploss
 ```
 
+The 4k Drop Loss-disabled run completed on 2026-11-07. Its validation results
+compared with the original 4k baseline are:
+
+| Configuration | AP | AP50 | AP75 | AP small | AP medium | AP large |
+|---|---:|---:|---:|---:|---:|---:|
+| 4k with Drop Loss | 11.49 | 28.94 | 7.04 | 5.28 | 26.00 | 29.62 |
+| 4k without Drop Loss | 10.74 | 26.13 | 7.28 | 4.61 | 25.50 | 28.42 |
+
+Segmentation metrics for the Drop Loss-disabled run were AP `10.25`, AP50
+`25.63`, AP75 `7.01`, AP small `3.62`, AP medium `26.52`, and AP large
+`28.94`.
+
+Disabling Drop Loss slightly improved strict localization (AP75), but reduced
+overall AP, AP50, and performance across all size categories. This does not
+support removing Drop Loss as an overall improvement for the initial detector.
+The next comparison should therefore focus on whether the disabled-loss model
+reduces high-confidence detector-only predictions, rather than treating its
+lower aggregate AP as evidence of better behavior.
+
+The fixed validation inference for this ablation is stored at:
+
+```text
+/home/dcortereal/datasets/sam3-training-threshold-1500-spatial/evaluation/initial-validation-no-droploss/
+```
+
+The high-confidence comparison, joined by canonical `file_name`, is:
+
+| Confidence threshold | Configuration | Predictions | Reference IoU >= 0.50 | Pseudo-label IoU >= 0.50 | Neither source |
+|---|---|---:|---:|---:|---:|
+| >= 0.70 | With Drop Loss | 21,790 | 9,137 (41.9%) | 3,673 | 11,881 |
+| >= 0.70 | Without Drop Loss | 7,492 | 5,354 (71.5%) | 3,424 | 1,572 |
+| >= 0.90 | With Drop Loss | 14,773 | 8,177 (55.4%) | 3,539 | 5,940 |
+| >= 0.90 | Without Drop Loss | 4,399 | 3,770 (85.7%) | 2,987 | 293 |
+| >= 0.95 | With Drop Loss | 10,430 | 7,118 (68.2%) | 3,405 | 2,769 |
+| >= 0.95 | Without Drop Loss | 3,210 | 2,917 (90.9%) | 2,586 | 79 |
+
+Disabling Drop Loss therefore strongly supports the hypothesis that the
+initial Drop Loss configuration contributes to the high-confidence
+overprediction behavior. It reduces the number of predictions at confidence
+`>= 0.95` by approximately `69%`, while reducing predictions unmatched to both
+the reference and pseudo-label sources from `2,769` to `79`. This does not
+prove that every removed prediction was a false positive, because the
+reference catalogue can be incomplete, but the change is substantially larger
+than the small aggregate AP difference alone suggests.
+
+### Round 1 self-training pilot
+
+The next experiment starts from the completed no-DropLoss initial checkpoint.
+It compares one self-training round with Drop Loss enabled against a matched
+round with Drop Loss disabled. The initial validation inference has already
+been completed; its predictions are merged with the original training
+pseudo-labels at confidence threshold `0.70`.
+
+The no-DropLoss self-training configuration is:
+
+```text
+third_party/CutLER/cutler/model_zoo/configs/CutLER-CraterDataset/cascade_mask_rcnn_R_50_FPN_self_train_modified_no_droploss.yaml
+```
+
+Do not launch all three self-training rounds until this Round 1 comparison has
+been evaluated.
+
 ## Experiment 1: longer initial training
 
 The first improvement experiment keeps the pseudo-labels, architecture,
