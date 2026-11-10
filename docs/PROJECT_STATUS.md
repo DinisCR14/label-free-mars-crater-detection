@@ -532,19 +532,40 @@ the geometry or the candidate prediction set requires a new score cache.
 
 ## Next steps
 
-1. Compare 4k and 15k representative validation overlays, with emphasis on
-   false positives, localization, and small-crater recall.
-2. Select the checkpoint and training strategy for the next controlled
-   experiment; do not start self-training yet.
-3. Use `.venv` for label generation and dataset preparation, and
-   `.venv-cutler` for detector training. `run_full_pipeline.py` accepts
-   `--label-python-executable` and `--training-python-executable` for this
-   split.
-4. Run the copy-paste-disabled controlled experiment using
-   `cascade_mask_rcnn_R_50_FPN_modified_no_copy_paste.yaml`. Compare its 15k
-   checkpoint with the existing 15k checkpoint before changing labels or
-   starting self-training.
-5. Run self-training rounds only if the improved initial detector is viable.
-6. Train and evaluate the final standard-loss detector.
-7. Compare detector results against the threshold-2000 and other cached
-   pseudo-label variants if needed.
+1. Finish the Round 3 comparison for the cumulative Drop Loss and no-DropLoss
+   branches.
+2. Train and evaluate the final standard-loss model for the selected branches.
+3. Freeze the selected policy, manifests, splits, annotation provenance,
+   configurations, and evaluation protocol before starting robustness studies.
+
+## Long-term J-STARS research roadmap
+
+The long-term goal is to extend the IGARSS 2026 work into a J-STARS
+submission. The planned extensions are:
+
+1. **Robustness and uncertainty:** run the selected pipeline across multiple
+   independent training seeds and report mean, standard deviation, and
+   confidence intervals. Use image- or tile-level bootstrap resampling for
+   metric intervals because crater annotations within one image are correlated.
+2. **Supervised comparison:** train the same detector architecture with the
+   canonical reference annotations, keeping the image split, training budget,
+   preprocessing, and evaluation protocol fixed. Compare this reference-
+   supervised model with the label-free model and the foundation-model
+   baseline.
+3. **External benchmarks:** investigate Mars Bench and Marsdo16k, documenting
+   imagery, resolution, latitude coverage, annotation format, crater-size
+   range, split policy, and metric definitions before making comparisons.
+   Benchmark labels must remain separate from the canonical project ground
+   truth.
+4. **Latitude-stratified analysis:** report coverage, crater-size
+   distribution, AP/AP50/AP75, recall, precision at fixed confidence
+   thresholds, and unsupported-prediction rates across balanced latitude
+   bands. Interpret geographic trends together with image quality, crater
+   density, and catalogue completeness.
+
+The planned order is: finalize the training policy, freeze the reproducibility
+package, establish the supervised comparator, run multi-seed robustness
+experiments, perform latitude analysis, and then add external benchmark
+comparisons. All comparisons must preserve the manifest-based mapping,
+spatial split policy, and strict separation between training pseudo-labels and
+evaluation reference annotations.
