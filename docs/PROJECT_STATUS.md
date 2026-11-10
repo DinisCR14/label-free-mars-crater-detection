@@ -275,6 +275,36 @@ match neither the reference nor filtered pseudo-label catalogue by bbox IoU.
 These unmatched predictions require qualitative and catalogue review before
 selecting the final self-training policy.
 
+### Round 3 branch comparison
+
+The two complete three-round self-training branches were evaluated on the
+fixed validation set:
+
+| Branch | AP | AP50 | AP75 | AP small | AP medium | AP large |
+|---|---:|---:|---:|---:|---:|---:|
+| Cumulative Drop Loss | 17.20 | 38.56 | 13.36 | 10.41 | 35.72 | 29.18 |
+| No-DropLoss | 14.65 | 31.12 | 11.57 | 7.12 | 33.05 | 29.33 |
+
+The cumulative Drop Loss branch improves AP by `2.55` points, AP50 by `7.43`
+points, AP75 by `1.80` points, and small-crater AP by `3.29` points.
+However, its confidence behavior diverges further:
+
+| Confidence threshold | Configuration | Predictions | Reference IoU >= 0.50 | Pseudo-label IoU >= 0.50 | Neither source |
+|---|---|---:|---:|---:|---:|
+| >= 0.70 | Cumulative Drop Loss | 43,493 | 13,139 (30.2%) | 3,688 | 29,651 |
+| >= 0.70 | No-DropLoss | 8,268 | 6,179 (74.7%) | 3,403 | 1,664 |
+| >= 0.90 | Cumulative Drop Loss | 29,881 | 12,191 (40.8%) | 3,625 | 17,043 |
+| >= 0.90 | No-DropLoss | 6,259 | 5,248 (83.8%) | 3,256 | 673 |
+| >= 0.95 | Cumulative Drop Loss | 19,709 | 10,889 (55.2%) | 3,538 | 8,250 |
+| >= 0.95 | No-DropLoss | 5,446 | 4,756 (87.3%) | 3,141 | 398 |
+
+The cumulative branch therefore has the strongest detector metrics but a very
+large unsupported high-confidence population. These unmatched counts remain
+provisional because bbox matching can miss valid ellipse matches and the
+reference catalogue may be incomplete. Final policy selection must therefore
+include qualitative/catalogue review and final standard-loss consolidation,
+not AP alone.
+
 A focused visual review set of 48 high-confidence predictions produced by the
 Drop Loss model but not matched by the no-DropLoss model is stored at:
 
