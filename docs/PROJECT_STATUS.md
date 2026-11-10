@@ -208,6 +208,73 @@ confidence reliability. The evaluation outputs are stored under:
 /home/dcortereal/datasets/sam3-training-threshold-1500-spatial/round1-pilot/evaluation-without-droploss/
 ```
 
+### Round 2 self-training comparison
+
+Both Round 2 models started from the same Round 1 no-DropLoss checkpoint and
+used the same Round 2 merged annotations, with only Drop Loss differing.
+Fixed validation results are:
+
+| Round 2 self-training | AP | AP50 | AP75 | AP small | AP medium | AP large |
+|---|---:|---:|---:|---:|---:|---:|
+| Drop Loss enabled | 13.62 | 30.76 | 10.24 | 6.84 | 30.56 | 29.36 |
+| Drop Loss disabled | 13.65 | 29.93 | 10.53 | 6.60 | 30.81 | 29.17 |
+
+At the same time, the confidence/matching audit shows:
+
+| Confidence threshold | Configuration | Predictions | Reference IoU >= 0.50 | Pseudo-label IoU >= 0.50 | Neither source |
+|---|---|---:|---:|---:|---:|
+| >= 0.70 | Drop Loss enabled | 16,369 | 8,433 (51.5%) | 3,627 | 7,289 |
+| >= 0.70 | Drop Loss disabled | 7,213 | 5,590 (77.5%) | 3,374 | 1,194 |
+| >= 0.90 | Drop Loss enabled | 10,380 | 6,904 (66.5%) | 3,487 | 2,953 |
+| >= 0.90 | Drop Loss disabled | 5,473 | 4,663 (85.2%) | 3,168 | 476 |
+| >= 0.95 | Drop Loss enabled | 8,091 | 6,053 (74.8%) | 3,380 | 1,594 |
+| >= 0.95 | Drop Loss disabled | 4,693 | 4,157 (88.6%) | 3,028 | 267 |
+
+Round 2 no-DropLoss is marginally better by overall AP (`13.65` vs `13.62`)
+and AP75, while Drop Loss remains better on AP50 and small-crater AP. The
+no-DropLoss model continues to produce approximately half as many
+high-confidence predictions and far fewer predictions unmatched to both
+annotation sources. The Round 2 outputs are stored under:
+
+```text
+/home/dcortereal/datasets/sam3-training-threshold-1500-spatial/round2-pilot/evaluation-with-droploss/
+/home/dcortereal/datasets/sam3-training-threshold-1500-spatial/round2-pilot/evaluation-without-droploss/
+```
+
+### Cumulative Drop Loss branch
+
+The missing cumulative branch was then trained using its own Round 2
+annotations:
+
+```text
+Initial no-DropLoss
+  -> Round 1 with DropLoss
+  -> Round 2 with DropLoss
+```
+
+Its fixed validation results were:
+
+| Branch | AP | AP50 | AP75 | AP small | AP medium | AP large |
+|---|---:|---:|---:|---:|---:|---:|
+| Cumulative Drop Loss | 15.42 | 35.01 | 11.47 | 8.63 | 33.00 | 29.72 |
+| Round 2 no-DropLoss branch | 13.65 | 29.93 | 10.53 | 6.60 | 30.81 | 29.17 |
+
+The cumulative Drop Loss branch has substantially better aggregate detection
+metrics, but its confidence behavior is much less reliable:
+
+| Confidence threshold | Predictions | Reference IoU >= 0.50 | Pseudo-label IoU >= 0.50 | Neither source |
+|---|---:|---:|---:|---:|
+| >= 0.70 | 31,375 | 11,506 (36.7%) | 3,685 | 19,158 |
+| >= 0.90 | 20,466 | 10,185 (49.8%) | 3,610 | 9,636 |
+| >= 0.95 | 14,451 | 8,956 (62.0%) | 3,510 | 4,941 |
+
+This is the clearest evidence so far of a recall/precision-calibration
+trade-off. Cumulative Drop Loss improves AP, AP50, AP75, and small-crater AP,
+but produces a very large population of high-confidence predictions that
+match neither the reference nor filtered pseudo-label catalogue by bbox IoU.
+These unmatched predictions require qualitative and catalogue review before
+selecting the final self-training policy.
+
 A focused visual review set of 48 high-confidence predictions produced by the
 Drop Loss model but not matched by the no-DropLoss model is stored at:
 
