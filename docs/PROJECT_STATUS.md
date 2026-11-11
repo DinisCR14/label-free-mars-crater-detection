@@ -317,6 +317,109 @@ predictions in green, and reference boxes in blue. These are selection aids,
 not correctness labels; catalogue omissions and bbox/ellipse localization
 differences still require separate review.
 
+### Final standard-loss consolidation
+
+Both Round 3 branches were consolidated with the matched 40,000-iteration
+standard-loss configuration (`USE_DROPLOSS: False`) and evaluated without
+changing the validation or test protocols.
+
+Final validation bbox results:
+
+| Branch | AP | AP50 | AP75 | AP small | AP medium | AP large |
+|---|---:|---:|---:|---:|---:|---:|
+| Cumulative Drop Loss | 17.20 | 38.40 | 13.10 | 10.20 | 35.70 | 29.60 |
+| No-DropLoss | 14.50 | 30.50 | 11.70 | 6.80 | 33.60 | 30.30 |
+
+Final held-out test bbox results:
+
+| Branch | AP | AP50 | AP75 | AP small | AP medium | AP large |
+|---|---:|---:|---:|---:|---:|---:|
+| Cumulative Drop Loss | 12.85 | 26.66 | 11.11 | 4.83 | 31.56 | 32.11 |
+| No-DropLoss | 12.23 | 23.98 | 11.01 | 4.08 | 31.06 | 33.55 |
+
+The exact Detectron2 outputs are stored at:
+
+```text
+/home/dcortereal/datasets/sam3-training-threshold-1500-spatial/final-pilot-cumulative-droploss/evaluation-val/
+/home/dcortereal/datasets/sam3-training-threshold-1500-spatial/final-pilot-no-droploss/evaluation-val/
+/home/dcortereal/datasets/sam3-training-threshold-1500-spatial/final-pilot-cumulative-droploss/evaluation-test/
+/home/dcortereal/datasets/sam3-training-threshold-1500-spatial/final-pilot-no-droploss/evaluation-test/
+```
+
+The final source-match audit at bbox IoU `>= 0.50` is:
+
+| Split | Branch | Confidence | Predictions | Reference overlap | Pseudo-label overlap | Neither source |
+|---|---|---:|---:|---:|---:|---:|
+| Validation | Cumulative Drop Loss | >= 0.95 | 9,895 | 7,573 (76.5%) | 3,377 | 1,903 |
+| Validation | No-DropLoss | >= 0.95 | 5,109 | 4,520 (88.5%) | 3,073 | 308 |
+| Test | Cumulative Drop Loss | >= 0.95 | 8,057 | 5,532 (68.7%) | 2,754 | 2,171 |
+| Test | No-DropLoss | >= 0.95 | 4,297 | 3,881 (90.3%) | 2,500 | 262 |
+
+Standard-loss consolidation preserves the cumulative branch's aggregate AP
+advantage, especially on validation and small craters, and gives it a modest
+test AP advantage. The no-DropLoss branch is substantially more conservative
+and better aligned with both reference and pseudo-label sources at high
+confidence, while remaining competitive on test AP and stronger on test large
+craters. The final policy should therefore be selected according to the
+intended operating point: cumulative Drop Loss for maximum catalogue recall
+after catalogue review, or no-DropLoss for a more reliable high-confidence
+detector. Neither choice should be justified by AP alone.
+
+### Final training-set label counts
+
+The final standard-loss models use the branch-specific Round 3 annotation
+files on the same `9,840` training images:
+
+| Training policy | Pseudo-label annotations | Canonical reference annotations | Pseudo/reference |
+|---|---:|---:|---:|
+| Cumulative Drop Loss | 279,424 | 429,510 | 65.1% |
+| No-DropLoss | 166,604 | 429,510 | 38.8% |
+
+The reference count is obtained by joining the canonical corrected-centerlat
+catalogue to the fixed training split. It is evaluation-only and was not used
+to construct either final training annotation file. The branch-specific
+annotation files are:
+
+```text
+/home/dcortereal/datasets/sam3-training-threshold-1500-spatial/round3-pilot-cumulative-droploss/annotations/train_r3.json
+/home/dcortereal/datasets/sam3-training-threshold-1500-spatial/round3-pilot-no-droploss/annotations/train_r3.json
+```
+
+### Final precision-recall-F1 diagnostics
+
+The score-ranked greedy bbox diagnostics use IoU thresholds from `0.1` to
+`0.9`, cap detections at `100` per image, and report precision, recall, and F1
+for all detections and for the project's small, medium, and large bbox-area
+ranges. The generated external reports and figures are:
+
+```text
+/home/dcortereal/datasets/evaluation/final-policy/val/greedy_bbox_metrics.json
+/home/dcortereal/datasets/evaluation/final-policy/val/greedy_bbox_metrics_all.png
+/home/dcortereal/datasets/evaluation/final-policy/val/greedy_bbox_metrics_by_size.png
+/home/dcortereal/datasets/evaluation/final-policy/test/greedy_bbox_metrics.json
+/home/dcortereal/datasets/evaluation/final-policy/test/greedy_bbox_metrics_all.png
+/home/dcortereal/datasets/evaluation/final-policy/test/greedy_bbox_metrics_by_size.png
+```
+
+For the primary cumulative policy, the inference confidence threshold was
+selected on validation only by maximizing greedy bbox F1 at IoU `0.50`, with
+100 detections per image. The selected threshold is `0.68`:
+
+| Split | Threshold | Precision | Recall | F1 | Predictions |
+|---|---:|---:|---:|---:|---:|
+| Validation | 0.68 | 0.5255 | 0.3863 | 0.4453 | 20,027 |
+| Test | 0.68 | 0.3876 | 0.2803 | 0.3253 | 19,317 |
+
+The test row was computed only after freezing the threshold selected from
+validation. It is a supplementary operating-point result and is distinct
+from the COCO AP metrics above. The calibration and test operating-point
+reports are stored at:
+
+```text
+/home/dcortereal/datasets/evaluation/final-policy/cumulative-threshold-calibration.json
+/home/dcortereal/datasets/evaluation/final-policy/cumulative-test-at-threshold-0.68.json
+```
+
 ## Experiment 1: longer initial training
 
 The first improvement experiment keeps the pseudo-labels, architecture,
@@ -562,11 +665,12 @@ the geometry or the candidate prediction set requires a new score cache.
 
 ## Next steps
 
-1. Finish the Round 3 comparison for the cumulative Drop Loss and no-DropLoss
-   branches.
-2. Train and evaluate the final standard-loss model for the selected branches.
-3. Freeze the selected policy, manifests, splits, annotation provenance,
-   configurations, and evaluation protocol before starting robustness studies.
+1. Review the unmatched cumulative-branch predictions qualitatively and
+   against additional catalogue sources before selecting the operating policy.
+2. Freeze the selected policy, manifests, splits, annotation provenance,
+   configurations, environment versions, and evaluation protocol.
+3. Establish the matched supervised comparator before starting multi-seed
+   robustness and latitude-stratified studies.
 
 ## Long-term J-STARS research roadmap
 
