@@ -22,6 +22,14 @@ CutLER/Detectron2 training. This is required because SAM 3 declares
 - FBWR angle count: `12`
 - Training split: spatially overlap-aware
 
+The original spatial split is a latitude-shift evaluation: its training
+images span approximately -70 to +38 degrees, validation spans +40 to +52
+degrees, and test spans +52 to +66 degrees. A separate balanced split has
+been prepared for primary evaluation using the
+`spatial_latitude_stratified` strategy with a 70/15/15 target. It keeps all
+100 overlap groups intact and distributes them across 20-degree latitude
+bands.
+
 Threshold `2000` remains available as a conservative comparison. The complete
 FBWR score cache allows additional thresholds to be generated without
 recomputing FBWR.
@@ -38,6 +46,8 @@ recomputing FBWR.
   `/home/dcortereal/datasets/ground-truth/corrected-centerlat/spatial-overlap-audit.json`
 - Prepared detector dataset:
   `/home/dcortereal/datasets/sam3-training-threshold-1500-spatial`
+- Balanced 70/15/15 detector dataset:
+  `/home/dcortereal/datasets/sam3-training-threshold-1500-balanced-70-15-15`
 
 ## Verified counts
 
@@ -57,6 +67,14 @@ recomputing FBWR.
 - Training pseudo-labels: `96,921`
 - Validation reference annotations: `27,244`
 - Test reference annotations: `26,709`
+
+### Balanced split
+
+- Train images: `8,511` (`69.4%`)
+- Validation images: `1,782` (`14.5%`)
+- Test images: `1,971` (`16.1%`)
+- Latitude range: approximately `-70` to `+66` degrees in each split
+- Overlap groups: `100`, all kept within one split
 
 ## Initial detector baseline
 
@@ -418,6 +436,43 @@ reports are stored at:
 ```text
 /home/dcortereal/datasets/evaluation/final-policy/cumulative-threshold-calibration.json
 /home/dcortereal/datasets/evaluation/final-policy/cumulative-test-at-threshold-0.68.json
+```
+
+### Matched supervised comparator
+
+A matched supervised comparator was trained with the canonical reference
+annotations on the same `9,840` training images, using the same Cascade Mask
+R-CNN architecture, 40,000-iteration budget, preprocessing, augmentation,
+and final standard-loss configuration. Only the training annotations differ
+from the label-free policies.
+
+The supervised comparator achieved:
+
+| Split | AP | AP50 | AP75 | AP small | AP medium | AP large |
+|---|---:|---:|---:|---:|---:|---:|
+| Validation | 29.30 | 51.31 | 27.91 | 17.46 | 50.87 | 45.26 |
+| Test | 24.09 | 41.84 | 23.30 | 12.87 | 44.22 | 41.05 |
+
+Using the same validation-only F1 calibration protocol at bbox IoU `0.50`,
+the supervised operating threshold is `0.45`:
+
+| Split | Threshold | Precision | Recall | F1 | Predictions |
+|---|---:|---:|---:|---:|---:|
+| Validation | 0.45 | 0.6076 | 0.5391 | 0.5713 | 24,172 |
+| Test | 0.45 | 0.5671 | 0.4266 | 0.4869 | 20,093 |
+
+The supervised comparator is therefore a substantially stronger reference
+point than either label-free branch. This comparison does not invalidate the
+label-free result: the comparator uses the full reference catalogue during
+training, whereas the label-free policies use only foundation-model
+pseudo-labels. The evaluation outputs and threshold reports are stored at:
+
+```text
+/home/dcortereal/datasets/sam3-training-threshold-1500-spatial/supervised-comparator/training/
+/home/dcortereal/datasets/sam3-training-threshold-1500-spatial/supervised-comparator/evaluation-val/
+/home/dcortereal/datasets/sam3-training-threshold-1500-spatial/supervised-comparator/evaluation-test/
+/home/dcortereal/datasets/evaluation/final-policy/supervised-threshold-calibration.json
+/home/dcortereal/datasets/evaluation/final-policy/supervised-test-at-threshold-0.45.json
 ```
 
 ## Experiment 1: longer initial training

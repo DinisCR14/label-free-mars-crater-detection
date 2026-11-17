@@ -346,6 +346,12 @@ so no training image overlaps a validation or test image. Use
 groups before preparing the dataset, run
 `tools/dataset/audit_spatial_overlap.py` with the canonical manifest.
 
+For a latitude-balanced evaluation while preserving overlap groups, use
+`--split-strategy spatial_latitude_stratified` with `--train-ratio 0.7` and
+`--val-ratio 0.15`. This distributes groups across 20-degree latitude bands;
+the remaining 15% is assigned to test. The original contiguous spatial split
+is retained as a separate latitude-shift evaluation.
+
 This creates `train/`, `val/`, `test/`, `annotations/`, and
 `split-manifest.json`. The pseudo-labels are used only for
 `annotations/train_initial.json`; validation and test annotations come from

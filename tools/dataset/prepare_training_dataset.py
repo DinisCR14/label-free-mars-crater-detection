@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from crater_detection.image_manifest import ImageManifest, ManifestImage
 
 TILE_DEGREES = 2.0
+LATITUDE_BAND_DEGREES = 20.0
 FILENAME_PATTERN = re.compile(
     r"^lat_(?P<lat>-?\d+(?:\.\d+)?)_long_(?P<lon>-?\d+(?:\.\d+)?)_corrected\.png$"
 )
@@ -181,6 +182,76 @@ def _spatial_split_images(
     return split_images, groups, footprints
 
 
+def _spatial_latitude_stratified_split_images(
+    images: tuple[ManifestImage, ...],
+    train_ratio: float,
+    val_ratio: float,
+    seed: int,
+) -> tuple[
+    dict[str, list[ManifestImage]],
+    list[list[ManifestImage]],
+    dict[str, dict[str, float]],
+]:
+    groups, footprints = _overlap_groups(images)
+    if len(groups) < 3:
+        raise ValueError(
+            "Latitude-stratified splitting requires at least three "
+            "non-overlapping groups"
+        )
+
+    split_names = ("train", "val", "test")
+    ratios = (train_ratio, val_ratio, 1.0 - train_ratio - val_ratio)
+    grouped_by_band: dict[int, list[list[ManifestImage]]] = {}
+    for group in groups:
+        latitude = footprints[group[0].file_name]["latitude"]
+        band = math.floor(latitude / LATITUDE_BAND_DEGREES)
+        grouped_by_band.setdefault(band, []).append(group)
+
+    random_generator = random.Random(seed)
+    split_groups = {split: [] for split in split_names}
+    for band_index, band_groups in enumerate(grouped_by_band.values()):
+        random_generator.shuffle(band_groups)
+        if len(band_groups) < len(split_names):
+            raise ValueError(
+                "Each latitude band must contain at least three "
+                "non-overlapping groups"
+            )
+        assigned_counts = [0, 0, 0]
+        total_band_images = sum(len(group) for group in band_groups)
+        target_counts = [total_band_images * ratio for ratio in ratios]
+        for split_index, group in enumerate(band_groups[: len(split_names)]):
+            split_groups[split_names[split_index]].append(group)
+            assigned_counts[split_index] += len(group)
+        for group in band_groups[len(split_names) :]:
+            split_index = max(
+                range(len(split_names)),
+                key=lambda index: (
+                    round(target_counts[index] - assigned_counts[index], 9),
+                    1
+                    if index == (1 if band_index % 2 == 0 else 2)
+                    else 0,
+                ),
+            )
+            split_groups[split_names[split_index]].append(group)
+            assigned_counts[split_index] += len(group)
+
+    split_images = {
+        split: [
+            image
+            for group in sorted(
+                assigned,
+                key=lambda group: (
+                    footprints[group[0].file_name]["latitude"],
+                    group[0].file_name,
+                ),
+            )
+            for image in group
+        ]
+        for split, assigned in split_groups.items()
+    }
+    return split_images, groups, footprints
+
+
 def _subset_document(
     source: dict,
     images: Iterable[ManifestImage],
@@ -270,7 +341,7 @@ def prepare_training_dataset(
 ) -> dict:
     if train_ratio <= 0 or val_ratio <= 0 or train_ratio + val_ratio >= 1:
         raise ValueError("train_ratio and val_ratio must be positive and sum to less than 1")
-    if split_strategy not in {"random", "spatial"}:
+    if split_strategy not in {"random", "spatial", "spatial_latitude_stratified"}:
         raise ValueError(f"Unknown split strategy: {split_strategy}")
     manifest = ImageManifest.load(manifest_path)
     image_root = Path(image_root).resolve()
@@ -282,6 +353,10 @@ def prepare_training_dataset(
     if split_strategy == "spatial":
         split_images, groups, footprints = _spatial_split_images(
             manifest.images, train_ratio, val_ratio
+        )
+    elif split_strategy == "spatial_latitude_stratified":
+        split_images, groups, footprints = _spatial_latitude_stratified_split_images(
+            manifest.images, train_ratio, val_ratio, seed
         )
     else:
         split_images = _split_images(manifest.images, train_ratio, val_ratio, seed)
@@ -303,7 +378,13 @@ def prepare_training_dataset(
     split_manifest = {
         "schema_version": 1,
         "split_strategy": (
-            "spatial_overlap_aware" if split_strategy == "spatial" else "random"
+            "spatial_overlap_aware"
+            if split_strategy == "spatial"
+            else (
+                "spatial_latitude_stratified"
+                if split_strategy == "spatial_latitude_stratified"
+                else "random"
+            )
         ),
         "seed": seed,
         "ratios": {"train": train_ratio, "val": val_ratio, "test": 1 - train_ratio - val_ratio},
@@ -313,12 +394,16 @@ def prepare_training_dataset(
             for split, images in split_images.items()
         },
     }
-    if split_strategy == "spatial":
+    if split_strategy in {"spatial", "spatial_latitude_stratified"}:
         split_manifest["overlap_policy"] = {
             "footprint_model": "corrected horizontal extent 2 degrees / cos(abs(center latitude))",
             "connected_overlap_groups_kept_together": True,
             "group_count": len(groups),
         }
+        if split_strategy == "spatial_latitude_stratified":
+            split_manifest["overlap_policy"]["latitude_band_degrees"] = (
+                LATITUDE_BAND_DEGREES
+            )
         split_manifest["groups"] = [
             {
                 "id": index,
@@ -345,9 +430,12 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument(
         "--split-strategy",
-        choices=("spatial", "random"),
+        choices=("spatial", "spatial_latitude_stratified", "random"),
         default="spatial",
-        help="Use overlap-aware spatial groups or legacy random image splitting",
+        help=(
+            "Use overlap-aware spatial groups, latitude-stratified spatial "
+            "groups, or legacy random image splitting"
+        ),
     )
     parser.add_argument(
         "--link-mode", choices=("symlink", "hardlink", "copy"), default="symlink"
