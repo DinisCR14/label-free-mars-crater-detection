@@ -69,7 +69,7 @@ class GroundedSAM:
         results = self.processor.post_process_grounded_object_detection(
             outputs,
             inputs.input_ids,
-            box_threshold=self.config.box_threshold,
+            threshold=self.config.box_threshold,
             text_threshold=self.config.text_threshold,
             target_sizes=[image_pil.size[::-1]],
         )
