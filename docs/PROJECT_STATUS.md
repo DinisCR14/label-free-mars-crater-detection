@@ -2,9 +2,10 @@
 
 ## Current stage
 
-Initial detector training has completed. The spatially isolated training
-dataset was prepared from the cached SAM 3 pseudo-labels, and the initial
-checkpoint is ready for fixed validation and test evaluation.
+Balanced retraining of the cumulative DropLoss, no-DropLoss, and supervised
+policies has completed. Fresh balanced validation and test inference has also
+completed. The current phase is a validation-only diagnostic series for
+selecting a possible cumulative DropLoss improvement.
 
 The Python environment is split by pipeline stage. `.venv` is reserved for
 SAM 3 and other foundation-model work, while `.venv-cutler` is reserved for
@@ -75,6 +76,265 @@ recomputing FBWR.
 - Test images: `1,971` (`16.1%`)
 - Latitude range: approximately `-70` to `+66` degrees in each split
 - Overlap groups: `100`, all kept within one split
+
+### Balanced policy retraining and final evaluation
+
+The cumulative DropLoss, no-DropLoss, and supervised policies were retrained
+on the balanced split with the same Cascade Mask R-CNN architecture,
+40,000-iteration budget, and standard-loss final consolidation. The
+label-free policies started from the same balanced initial pseudo-labels and
+used self-training thresholds `0.70`, `0.65`, and `0.60`.
+
+Final checkpoints:
+
+- Cumulative DropLoss:
+  `/home/dcortereal/datasets/sam3-training-threshold-1500-balanced-70-15-15/training-cumulative-droploss/final-standard-loss/model_final.pth`
+- No-DropLoss:
+  `/home/dcortereal/datasets/sam3-training-threshold-1500-balanced-70-15-15/training-no-droploss/final-standard-loss/model_final.pth`
+- Supervised:
+  `/home/dcortereal/datasets/sam3-training-threshold-1500-balanced-70-15-15/training-supervised/model_final.pth`
+
+Fresh inference was run with `TEST.DETECTIONS_PER_IMAGE=100`. The following
+standard COCO bbox metrics use the balanced validation and test references;
+the test reference uses clipped boxes. Values are AP@[0.50:0.95], AP50, AP75,
+and AR100 respectively:
+
+| Policy | Validation AP / AP50 / AP75 / AR100 | Test AP / AP50 / AP75 / AR100 |
+| --- | --- | --- |
+| Cumulative DropLoss | 20.99 / 50.83 / 14.99 / 29.35 | 21.58 / 51.96 / 15.62 / 30.46 |
+| No-DropLoss | 17.61 / 41.43 / 12.34 / 24.24 | 17.52 / 41.22 / 12.20 / 24.76 |
+| Supervised | 36.34 / 66.94 / 33.03 / 42.42 | 37.12 / 67.55 / 34.30 / 43.39 |
+
+Evaluation reports and predictions are external to the repository under:
+
+`/home/dcortereal/datasets/evaluation/balanced-70-15-15-final`
+
+These are the primary balanced-split detector results. Confidence-threshold
+calibration and greedy precision/recall/F1 analysis are reported below, with
+all thresholds selected using validation only before evaluating the test set.
+
+### Balanced confidence calibration and frozen test operating points
+
+Confidence thresholds were calibrated independently for each policy using
+only balanced validation predictions, maximizing score-ranked greedy bbox F1
+at IoU `0.50`. Predictions were capped at `100` per image, and thresholds
+were searched from `0.00` through `0.99` in increments of `0.01`. The selected
+thresholds were then frozen and applied once to the balanced test predictions.
+
+| Policy | Selected threshold | Validation precision / recall / F1 | Test precision / recall / F1 |
+| --- | ---: | --- | --- |
+| Cumulative DropLoss | 0.76 | 67.33% / 49.04% / 56.75% | 66.23% / 50.32% / 57.19% |
+| No-DropLoss | 0.03 | 69.15% / 41.72% / 52.04% | 67.49% / 41.87% / 51.68% |
+| Supervised | 0.42 | 81.65% / 64.17% / 71.86% | 80.21% / 65.18% / 71.92% |
+
+The no-DropLoss threshold is low because its score distribution is more
+conservative; it is not comparable to the cumulative policy's threshold as a
+confidence-calibration value. The frozen test results remain supplementary
+operating-point measurements and are separate from COCO AP.
+
+External calibration reports, including the complete validation threshold
+curves and source paths, are stored under:
+
+`/home/dcortereal/datasets/evaluation/balanced-70-15-15-final/threshold-calibration`
+
+### Cumulative DropLoss improvement test series
+
+The current balanced cumulative DropLoss result is the locked baseline:
+validation AP `20.99`, AP50 `50.83`; test AP `21.58`, AP50 `51.96`.
+The balanced test set must not be used to select an improvement. The following
+gated series is intended to identify the source of the largest recoverable
+gain before starting multi-seed robustness experiments.
+
+#### Diagnostic gate: identify the dominant error
+
+Run without retraining:
+
+1. **Validation stratification** — report AP/AP50 and frozen-threshold
+   precision, recall, and F1 by 20-degree latitude band and by crater size.
+   The initial operating-point audit shows the largest weakness in the
+   northern bands (`+30` to `+70` degrees) and very low large-crater
+   precision. The audit is external at:
+   `/home/dcortereal/datasets/evaluation/balanced-70-15-15-final/diagnostic-strata/validation_operating_strata.json`.
+2. **Pseudo-label source audit** — match initial and final cumulative
+   pseudo-labels to the training reference at bbox IoU `0.50`, separately by
+   latitude and size. Measure reference coverage, supported precision,
+   unsupported detections, and duplicate/overlapping detections.
+3. **Round trajectory audit** — evaluate the initial detector and each
+   cumulative self-training round on the same validation split. Record AP,
+   AP50, size AP, latitude AP, prediction count, and unsupported-prediction
+   rate. This distinguishes gains from pseudo-label accumulation from gains
+   caused by the final consolidation.
+
+The diagnostic gate determines which branch of the ablation matrix is worth
+training. It does not change the baseline or inspect the test annotations.
+
+#### Cheap pseudo-label ablations: no detector retraining
+
+Use the cached SAM 3/FBWR predictions to construct candidate training labels
+without recomputing foundation-model inference:
+
+| Candidate | Hypothesis | Proceed if validation evidence shows |
+| --- | --- | --- |
+| FBWR `1500` baseline | Current balance of coverage and noise | Reference coverage is the limiting factor |
+| FBWR `2000` | Stricter filtering reduces accumulated false positives | Unsupported detections dominate and recall loss is acceptable |
+| Confidence-aware `1500` | High FBWR scores should use a lower confidence floor, while marginal scores need stricter confidence | Size/latitude slices show low-quality marginal labels |
+| Supported-source restriction | Remove labels with no source/shape support | Unsupported cumulative detections are concentrated in a specific slice |
+
+These are label-quality tests, not final performance claims. A candidate is
+eligible for retraining only if it improves the validation pseudo-label
+coverage/precision trade-off without eliminating the small-crater or
+northern-latitude populations.
+
+#### Controlled retraining gate
+
+Retrain at most two candidates, keeping the architecture, split, random seed,
+iteration budget, augmentation, and three-round schedule fixed:
+
+1. the candidate with the best pseudo-label coverage/quality trade-off;
+2. one alternative targeting the dominant latitude/size failure mode.
+
+For each candidate, compare against the locked cumulative baseline using:
+
+- validation AP and AP50 as the primary selection metrics;
+- AP by size and latitude as explanatory metrics;
+- frozen validation F1 at IoU `0.50`;
+- unsupported-prediction rate and prediction count.
+
+An improvement is considered substantial enough to justify a fresh test
+evaluation only if it achieves at least `+2.0` validation AP or `+3.0`
+validation AP50, while not losing more than `1.0` AP in any major size or
+latitude stratum. If no candidate meets this gate, retain the current
+cumulative policy and proceed to robustness/latitude analysis instead of
+overfitting the validation split.
+
+#### Locked test decision
+
+Only the best validation-supported candidate receives one fresh test
+evaluation. The test comparison must use the same COCO protocol and the
+validation-selected confidence threshold. All rejected candidates remain
+validation-only diagnostics.
+
+The first pseudo-label diagnostic found that, on the balanced training image
+set at bbox IoU `0.50`, the FBWR threshold trade-off is:
+
+| FBWR threshold | Pseudo-labels | Reference-matched precision | Reference coverage |
+| ---: | ---: | ---: | ---: |
+| 1,200 | 90,626 | 83.2% | 22.5% |
+| 1,500 (baseline) | 71,299 | 85.6% | 18.3% |
+| 2,000 | 41,926 | 88.4% | 11.1% |
+
+Threshold `1,200` is therefore the first promising candidate: it increases
+reference coverage by approximately 23% relative to the baseline while
+retaining a substantial matched-label precision. This is a pseudo-label
+diagnostic, not detector performance; it must still be validated through
+controlled retraining.
+
+The shared balanced `annotations/train_r3.json` was later consumed by the
+no-DropLoss run and cannot be used as provenance for cumulative DropLoss
+Round 3. Cumulative and no-DropLoss branch-specific detector predictions
+remain available, but future pseudo-label audits must use branch-specific
+annotation artifacts or regenerate them from the saved inference outputs.
+
+The controlled FBWR-`1200` candidate completed its full three-round
+self-training schedule and final standard-loss consolidation. On balanced
+validation it achieved AP `23.18` and AP50 `53.02`, compared with the
+baseline cumulative policy's AP `20.99` and AP50 `50.83`. However, its
+size-stratified standard AP changed as follows:
+
+| Policy | AP small | AP medium | AP large |
+| --- | ---: | ---: | ---: |
+| Cumulative baseline | 20.58 | 47.42 | 18.55 |
+| FBWR-1200 candidate | 22.64 | 44.64 | 15.85 |
+
+The candidate is therefore validation-promising in aggregate but fails the
+predefined improvement gate because medium and large AP regress by more than
+one point. It remains validation-only and must not be evaluated on the locked
+test set. Its external artifacts are under:
+
+`/home/dcortereal/datasets/evaluation/balanced-70-15-15-final/candidate-fbwr1200`
+
+Two further validation candidates were tested:
+
+| Candidate | Stage | AP | AP50 | AP small | AP medium | AP large |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| Strict merge, thresholds `0.80/0.75/0.70` | Final | 21.94 | 52.29 | 21.7 | 45.5 | 18.3 |
+| FBWR `1350` | Initial only | 17.39 | 42.31 | 15.8 | 46.7 | 20.0 |
+
+Strict merge is slightly better in aggregate than the cumulative baseline,
+but it fails the improvement gate because medium-crater AP falls by about
+`1.9` points. FBWR `1350` is below the baseline at the initial stage and was
+not advanced to full self-training. Neither candidate is eligible for test
+evaluation.
+
+The size-aware hybrid candidate (FBWR `1200` for small boxes and `1500` for
+medium/large boxes) was also evaluated at the initial-detector gate. Compared
+with the baseline initial detector, it achieved AP `15.03` versus `14.35`
+and AP50 `39.70` versus `36.88`, while AP small changed from `13.04` to
+`14.15`, AP medium from `44.55` to `44.42`, and AP large from `14.71` to
+`14.35`. The overall AP gain of `+0.68` is below the `+2.0` retraining gate,
+so the hybrid does not proceed to self-training or test evaluation. Its
+validation-only artifacts are under:
+
+`/home/dcortereal/datasets/evaluation/balanced-70-15-15-final/candidate-hybrid-small1200`
+
+The stricter cumulative merge was completed using the FBWR-`1500` initial
+labels and confidence thresholds `0.80/0.75/0.70` for newly added detector
+predictions across the three rounds. It tested whether lower-confidence
+prediction accumulation was causing the medium/large regressions seen with
+FBWR-`1200`. Its external artifacts are under:
+
+`/home/dcortereal/datasets/evaluation/balanced-70-15-15-final/candidate-strict-merge`
+
+### Round-by-round validation trajectory
+
+The cumulative baseline and FBWR-`1200` candidate were evaluated at the
+initial checkpoint, after each self-training round, and after final standard
+loss consolidation. All predictions use the balanced validation split and
+`TEST.DETECTIONS_PER_IMAGE=100`; the locked test set was not used.
+
+| Policy / stage | AP | AP50 | AP75 | AP small | AP medium | AP large | AR100 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Cumulative / initial | 14.29 | 36.93 | 8.74 | 13.09 | 44.44 | 14.66 | 20.73 |
+| Cumulative / R1 | 18.07 | 46.35 | 11.69 | 17.50 | 45.87 | 17.06 | 25.82 |
+| Cumulative / R2 | 20.47 | 50.71 | 13.87 | 20.13 | 45.01 | 16.79 | 28.47 |
+| Cumulative / R3 | 21.90 | 52.09 | 15.73 | 21.77 | 44.98 | 16.86 | 29.87 |
+| Cumulative / final | 20.99 | 50.83 | 14.99 | 20.58 | 47.42 | 18.55 | 29.35 |
+| FBWR-1200 / initial | 18.33 | 43.38 | 13.17 | 17.06 | 46.99 | 20.30 | 23.74 |
+| FBWR-1200 / R1 | 20.44 | 49.63 | 14.26 | 19.84 | 46.40 | 19.54 | 27.54 |
+| FBWR-1200 / R2 | 22.57 | 52.66 | 16.70 | 21.99 | 45.64 | 17.99 | 29.55 |
+| FBWR-1200 / R3 | 22.66 | 53.23 | 16.68 | 22.26 | 44.52 | 16.90 | 30.08 |
+| FBWR-1200 / final | 23.18 | 53.02 | 17.62 | 22.64 | 44.64 | 15.85 | 31.07 |
+
+The cumulative trajectory shows that the largest aggregate gains arrive by
+Round 2 and Round 3, while final standard-loss consolidation lowers AP by
+`0.91` points from the R3 checkpoint but improves medium and large AP. The
+FBWR-`1200` trajectory continues improving through final consolidation, but
+its final medium and large AP remain below the cumulative baseline. This
+confirms that the candidate's aggregate gain is driven primarily by small
+craters and does not satisfy the balanced size gate.
+
+The consolidated report is stored externally at:
+
+`/home/dcortereal/datasets/evaluation/balanced-70-15-15-final/round-evals/metrics/coco_bbox_metrics.json`
+
+The cumulative Round 4 continuation was then run from the saved cumulative
+Round 3 checkpoint using confidence threshold `0.55` for newly added
+predictions. It was evaluated on balanced validation only, without final
+standard-loss consolidation and without accessing the test set:
+
+| Policy / stage | AP | AP50 | AP75 | AP small | AP medium | AP large | AR100 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Cumulative / R4 | 23.04 | 53.18 | 16.76 | 22.64 | 44.01 | 14.89 | 31.17 |
+
+Relative to the cumulative final baseline (`20.99 / 50.83`), Round 4 gains
+`+2.04` AP and `+2.35` AP50, and therefore passes the aggregate improvement
+threshold. It fails the balanced size gate, however: medium AP decreases by
+`3.41` points and large AP decreases by `3.66` points, while the small-crater
+gain is `+2.06`. Round 4 is consequently a useful saturation diagnostic but
+is not eligible for locked-test evaluation or replacement of the cumulative
+final baseline. Its external artifacts are under:
+
+`/home/dcortereal/datasets/evaluation/balanced-70-15-15-final/round4-cumulative`
 
 ## Initial detector baseline
 

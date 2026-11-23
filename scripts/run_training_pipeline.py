@@ -179,6 +179,11 @@ def main() -> None:
     parser.add_argument("--initial-weights", type=Path, required=True)
     parser.add_argument("--annotations-dir", type=Path, required=True)
     parser.add_argument("--output-root", type=Path, required=True)
+    parser.add_argument(
+        "--thresholds",
+        default="0.70,0.65,0.60",
+        help="Comma-separated self-training confidence thresholds by round.",
+    )
     parser.add_argument("--num-gpus", type=int, default=1)
     parser.add_argument("--python-executable", default="python")
     parser.add_argument(
@@ -188,6 +193,18 @@ def main() -> None:
     )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
+    try:
+        thresholds = tuple(
+            float(value.strip())
+            for value in args.thresholds.split(",")
+            if value.strip()
+        )
+    except ValueError as error:
+        parser.error(f"--thresholds must be comma-separated numbers: {error}")
+    if not thresholds:
+        parser.error("--thresholds must contain at least one value")
+    if any(value < 0.0 or value > 1.0 for value in thresholds):
+        parser.error("--thresholds values must be between 0.0 and 1.0")
 
     cutler_root = (
         args.cutler_root
@@ -221,6 +238,7 @@ def main() -> None:
         initial_weights=args.initial_weights.resolve(),
         annotations_dir=args.annotations_dir.resolve(),
         output_root=args.output_root.resolve(),
+        thresholds=thresholds,
         num_gpus=args.num_gpus,
         python_executable=args.python_executable,
     )
