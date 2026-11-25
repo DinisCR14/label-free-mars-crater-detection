@@ -368,6 +368,41 @@ The SAM 3 results remain the matched comparator, and no additional
 foundation-model or policy selection should be performed using the locked
 test set.
 
+### Initial pseudo-label quality comparison
+
+The initial pseudo-label sets were compared on the identical 8,511-image
+balanced training split. Matches use greedy one-to-one bbox IoU at `0.50`
+against the training reference annotations; the reference is used only for
+this diagnostic, not for pseudo-label generation.
+
+| Foundation model | Initial labels | Images with labels | Matched labels | Supported precision | Reference coverage |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| SAM 3 | 71,299 | 7,307 | 60,960 | 85.50% | 18.23% |
+| Grounded SAM | 3,704 | 3,263 | 3,659 | **98.79%** | 1.09% |
+
+Grounded SAM produced only 5.2% as many training pseudo-labels as SAM 3, but
+its unsupported-label count was just `45`, compared with `10,339` for SAM 3.
+The two sets had `3,515` matched labels in common: this is 94.90% of the
+Grounded SAM set but only 4.93% of the SAM 3 set. Grounded SAM therefore acts
+like a highly precise subset of the broader SAM 3 proposal set rather than a
+different population of craters.
+
+The quality difference is also size- and latitude-dependent. SAM 3's
+supported precision was 71.2% for small labels, 88.9% for medium labels, and
+99.0% for large labels. Grounded SAM produced no labels in the project's
+small bbox-area band, while its medium and large label precision was 100.0%
+and 98.2%, respectively. SAM 3's supported precision declined from 91.1% in
+the southernmost band (`-70` to `-50` degrees) to 61.3% in the northernmost
+band (`+50` to `+70` degrees); Grounded SAM remained between 97.3% and 99.8%
+across the latitude bands.
+
+This explains why label quantity alone did not predict detector quality:
+SAM 3 supplied much broader coverage but also substantially more false
+positives, especially for small and northern-latitude proposals. Grounded
+SAM supplied sparse, high-confidence supervision, after which detector
+self-training recovered additional proposals. The coverage difference remains
+a limitation and should be included in the robustness and ablation analyses.
+
 External Grounded SAM artifacts:
 
 - Labels:
