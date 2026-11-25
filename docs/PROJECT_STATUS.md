@@ -4,8 +4,9 @@
 
 Balanced retraining of the cumulative DropLoss, no-DropLoss, and supervised
 policies has completed. Fresh balanced validation and test inference has also
-completed. The current phase is a validation-only diagnostic series for
-selecting a possible cumulative DropLoss improvement.
+completed. A matched Grounded SAM cumulative DropLoss comparison has now
+completed, and the next phase is robustness, latitude-stratified analysis, and
+benchmark comparison using the selected foundation model.
 
 The Python environment is split by pipeline stage. `.venv` is reserved for
 SAM 3 and other foundation-model work, while `.venv-cutler` is reserved for
@@ -14,8 +15,9 @@ CutLER/Detectron2 training. This is required because SAM 3 declares
 
 ## Selected configuration
 
-- Foundation model: SAM 3
-- SAM 3 prediction configuration: confidence threshold `0.4`
+- Foundation model: Grounded SAM (Grounding DINO plus SAM ViT-H)
+- Grounded SAM prediction configuration: box threshold `0.30`, text threshold
+  `0.25`, prompt `circle`
 - Geometric refinement: enabled
 - FBWR threshold: `1500`
 - FBWR center-window fraction: `0.10`
@@ -335,6 +337,47 @@ is not eligible for locked-test evaluation or replacement of the cumulative
 final baseline. Its external artifacts are under:
 
 `/home/dcortereal/datasets/evaluation/balanced-70-15-15-final/round4-cumulative`
+
+## Matched Grounded SAM comparison
+
+Grounded SAM was evaluated with the same balanced 70/15/15 split, FBWR-1500
+pseudo-label threshold, Cascade Mask R-CNN architecture, cumulative
+DropLoss schedule, three self-training rounds, final standard-loss
+consolidation, and 100 detections per image as the selected SAM 3 baseline.
+Grounded SAM used Grounding DINO (`IDEA-Research/grounding-dino-base`) with
+the official SAM ViT-H checkpoint. Its label-generation run produced 5,360
+FBWR-1500 pseudo-labels, compared with 104,003 for SAM 3; this difference is
+an important limitation when interpreting the matched detector comparison.
+
+| Foundation model | Validation AP | Validation AP50 | Validation AP75 | AP small | AP medium | AP large | AR100 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| SAM 3 | 20.99 | 50.83 | 14.99 | 20.58 | 47.42 | 18.55 | 29.35 |
+| Grounded SAM | 24.46 | 52.60 | 19.35 | 22.61 | 49.30 | 26.24 | 31.49 |
+
+Grounded SAM clears the predeclared validation gate with a `+3.47` AP gain
+over SAM 3 and no regression in standard COCO size AP. It therefore received
+the one authorized locked-test evaluation:
+
+| Foundation model | Test AP | Test AP50 | Test AP75 | AP small | AP medium | AP large | AR100 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| SAM 3 | 21.58 | 51.96 | 15.62 | 21.22 | 47.31 | 16.86 | 30.46 |
+| Grounded SAM | 25.12 | 53.89 | 20.11 | 23.46 | 48.53 | 24.72 | 32.56 |
+
+Grounded SAM is now the selected foundation model for subsequent analyses.
+The SAM 3 results remain the matched comparator, and no additional
+foundation-model or policy selection should be performed using the locked
+test set.
+
+External Grounded SAM artifacts:
+
+- Labels:
+  `/home/dcortereal/datasets/grounded-sam-runs/balanced-comparison-threshold-1500`
+- Balanced detector dataset:
+  `/home/dcortereal/datasets/grounded-sam-training-threshold-1500-balanced-70-15-15`
+- Validation metrics:
+  `/home/dcortereal/datasets/evaluation/balanced-70-15-15-final/grounded-sam-cumulative-val/metrics-val/coco_bbox_metrics.json`
+- Test metrics:
+  `/home/dcortereal/datasets/evaluation/balanced-70-15-15-final/grounded-sam-cumulative-test/metrics-test/coco_bbox_metrics.json`
 
 ## Initial detector baseline
 
