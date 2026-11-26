@@ -403,6 +403,42 @@ SAM supplied sparse, high-confidence supervision, after which detector
 self-training recovered additional proposals. The coverage difference remains
 a limitation and should be included in the robustness and ablation analyses.
 
+### Precision-coverage ablation
+
+Two validation-only initial-label ablations were trained with the same
+balanced split, architecture, pretrained weights, cumulative DropLoss
+schedule, self-training thresholds, and final consolidation. The locked test
+set was not used.
+
+| Initial-label policy | Training labels | Validation AP | AP50 | AP75 | AP small | AP medium | AP large | AR100 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| SAM 3 FBWR-1500 baseline | 71,299 | 20.99 | 50.83 | 14.99 | 20.58 | 47.42 | 18.55 | 29.35 |
+| SAM 3 FBWR-2000 | 41,926 | 19.62 | 49.75 | 12.65 | 19.58 | 39.10 | 6.55 | 27.53 |
+| Grounded SAM FBWR-1500 | 3,704 | 24.46 | 52.60 | 19.35 | 22.61 | 49.30 | 26.24 | 31.49 |
+| Grounded SAM + SAM 3 FBWR-2000 | 43,294 | 21.47 | 51.43 | 15.06 | 20.83 | 40.72 | 14.99 | 28.92 |
+
+The strict SAM 3 policy is worse than the FBWR-1500 baseline despite having
+fewer and cleaner labels. Its large-crater AP collapses, showing that
+precision cannot be optimized independently of coverage and size composition.
+The hybrid recovers some small-crater performance relative to strict SAM 3,
+but remains well below Grounded SAM and loses 8.58 AP on medium craters and
+11.25 AP on large craters relative to it.
+
+Neither candidate satisfies the improvement gate. The hybrid's aggregate
+gain over the SAM 3 baseline is only `+0.48` AP and its medium and large AP
+regress by more than `1.0`; relative to the selected Grounded SAM policy it
+is `-3.00` AP. Both candidates are therefore rejected and receive no test
+evaluation. The selected Grounded SAM cumulative policy remains unchanged.
+
+External ablation artifacts:
+
+- Strict SAM 3 dataset:
+  `/home/dcortereal/datasets/sam3-training-threshold-2000-balanced-70-15-15`
+- Hybrid dataset:
+  `/home/dcortereal/datasets/hybrid-grounded1500-sam32000-training-balanced-70-15-15`
+- Validation metrics:
+  `/home/dcortereal/datasets/evaluation/balanced-70-15-15-final/pseudo-label-ablation-metrics-val/coco_bbox_metrics.json`
+
 External Grounded SAM artifacts:
 
 - Labels:
