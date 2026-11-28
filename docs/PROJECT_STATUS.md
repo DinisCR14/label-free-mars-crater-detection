@@ -439,6 +439,35 @@ External ablation artifacts:
 - Validation metrics:
   `/home/dcortereal/datasets/evaluation/balanced-70-15-15-final/pseudo-label-ablation-metrics-val/coco_bbox_metrics.json`
 
+### SAM 3 confidence-threshold ablation
+
+The next experiment retained SAM 3 FBWR-1500 labels but applied a confidence
+floor of `0.75` before training. The training-split label set contained
+`13,380` labels. The pseudo-label audit estimated `98.86%` supported
+precision, `3.96%` reference coverage, and approximately 3.6 times the
+coverage of Grounded SAM at nearly identical precision.
+
+| Initial-label policy | Training labels | Validation AP | AP50 | AP75 | AP small | AP medium | AP large | AR100 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Grounded SAM FBWR-1500 | 3,704 | 24.46 | 52.60 | 19.35 | 22.61 | 49.30 | 26.24 | 31.49 |
+| SAM 3 confidence >= 0.75 | 13,380 | **25.47** | **56.01** | 19.19 | **24.68** | 46.44 | 18.29 | **32.91** |
+
+This is the strongest SAM 3 validation result so far and supports the
+precision-coverage hypothesis. It improves aggregate AP by `+1.01`, AP50 by
+`+3.41`, small AP by `+2.07`, and AR100 by `+1.42` over Grounded SAM. It does
+not satisfy the balanced improvement gate, however: medium AP decreases by
+`2.90` and large AP decreases by `7.95`. The gain is therefore concentrated
+in small craters and is not sufficient to authorize a locked-test evaluation.
+The confidence-0.75 candidate remains a valuable diagnostic for a future
+size-aware policy, while Grounded SAM cumulative remains the selected policy.
+
+External confidence-threshold artifacts:
+
+- Dataset:
+  `/home/dcortereal/datasets/sam3-training-confidence075-balanced-70-15-15`
+- Validation metrics:
+  `/home/dcortereal/datasets/evaluation/balanced-70-15-15-final/sam3-confidence075-val/metrics-val/coco_bbox_metrics.json`
+
 External Grounded SAM artifacts:
 
 - Labels:
