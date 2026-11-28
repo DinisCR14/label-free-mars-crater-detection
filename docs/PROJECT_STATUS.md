@@ -468,6 +468,64 @@ External confidence-threshold artifacts:
 - Validation metrics:
   `/home/dcortereal/datasets/evaluation/balanced-70-15-15-final/sam3-confidence075-val/metrics-val/coco_bbox_metrics.json`
 
+### Large-crater hybrid policy
+
+The large-crater-targeted hybrid candidates retain all Grounded SAM
+FBWR-1500 labels and add non-overlapping SAM 3 large-area predictions. The
+confidence thresholds apply only to the added SAM 3 labels:
+
+| Candidate | Added large labels | Total training labels |
+| --- | ---: | ---: |
+| SAM 3 confidence >= 0.75 | 1,889 | 7,249 |
+| SAM 3 confidence >= 0.40 | 5,149 | 10,509 |
+
+Both candidates were trained with the same balanced split, architecture,
+three cumulative self-training rounds, and final standard-loss consolidation.
+Their fixed balanced validation results are:
+
+| Policy | AP | AP50 | AP75 | AP small | AP medium | AP large | AR100 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Grounded SAM cumulative baseline | 24.46 | 52.60 | 19.35 | 22.61 | 49.30 | 26.24 | 31.49 |
+| Large hybrid, confidence >= 0.75 | **27.31** | **55.00** | **23.35** | **25.98** | 48.82 | 25.28 | **34.19** |
+| Large hybrid, confidence >= 0.40 | 25.42 | 53.17 | 20.74 | 23.80 | 48.55 | 25.49 | 32.83 |
+
+The confidence-0.75 candidate is the selected policy. It improves validation
+AP by `+2.85` and AP50 by `+2.40`, while losing less than `1.0` AP in every
+standard crater-size stratum. Latitude-stratified validation also improved in
+every populated 20-degree band, including `+5.02` AP in the `+50` to `+70`
+degree band. The confidence-0.40 candidate improved every populated latitude
+band as well, but was weaker overall. The `-50` to `-30` band contains no
+validation images in this balanced split and is not used for the gate.
+
+The selected candidate then received the single authorized locked-test
+evaluation:
+
+| Policy | AP | AP50 | AP75 | AP small | AP medium | AP large | AR100 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Grounded SAM cumulative baseline | 25.12 | 53.89 | 20.11 | 23.46 | 48.53 | 24.72 | 32.56 |
+| Large hybrid, confidence >= 0.75 | **28.06** | **56.25** | **24.36** | **26.86** | 48.53 | 23.83 | **35.28** |
+
+The selected hybrid therefore improves test AP by `+2.94`, AP50 by `+2.36`,
+AP75 by `+4.25`, and AR100 by `+2.72`. Standard COCO large-crater AP remains
+slightly below Grounded SAM (`-0.89`), while the custom bbox-area large AP is
+`43.26`; the custom area metrics should not be mixed with the standard COCO
+size metrics.
+
+External large-hybrid artifacts:
+
+- Confidence-0.75 dataset:
+  `/home/dcortereal/datasets/large-only-hybrid-confidence075-training-balanced-70-15-15`
+- Confidence-0.40 dataset:
+  `/home/dcortereal/datasets/large-only-hybrid-confidence040-training-balanced-70-15-15`
+- Confidence-0.75 validation metrics:
+  `/home/dcortereal/datasets/evaluation/balanced-70-15-15-final/large-hybrid-conf075-val/coco_bbox_metrics.json`
+- Confidence-0.40 validation metrics:
+  `/home/dcortereal/datasets/evaluation/balanced-70-15-15-final/large-hybrid-conf040-val/coco_bbox_metrics.json`
+- Latitude-stratified validation:
+  `/home/dcortereal/datasets/evaluation/balanced-70-15-15-final/large-hybrid-latitude-validation.json`
+- Confidence-0.75 locked-test metrics:
+  `/home/dcortereal/datasets/evaluation/balanced-70-15-15-final/large-hybrid-conf075-test/coco_bbox_metrics.json`
+
 External Grounded SAM artifacts:
 
 - Labels:
@@ -1123,12 +1181,12 @@ the geometry or the candidate prediction set requires a new score cache.
 
 ## Next steps
 
-1. Review the unmatched cumulative-branch predictions qualitatively and
-   against additional catalogue sources before selecting the operating policy.
-2. Freeze the selected policy, manifests, splits, annotation provenance,
-   configurations, environment versions, and evaluation protocol.
-3. Establish the matched supervised comparator before starting multi-seed
-   robustness and latitude-stratified studies.
+1. Freeze the selected large-hybrid policy, manifests, splits, annotation
+   provenance, configurations, environment versions, and evaluation protocol.
+2. Establish the matched supervised comparator and preserve the locked test
+   result as the single reported evaluation for this policy.
+3. Run multi-seed robustness experiments and report uncertainty intervals,
+   followed by the planned external benchmark and catalogue comparisons.
 
 ## Long-term J-STARS research roadmap
 
